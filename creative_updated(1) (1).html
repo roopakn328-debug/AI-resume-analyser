@@ -1,0 +1,3010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Scanline — AI Resume Analyser</title>
+
+
+<style>
+:root{
+  --ink:#071021; --ink2:#0b1630; --panel:#111d38; --panel2:#162447;
+  --paper:#f7f8ff; --signal:#ffb43d; --cyan:#45e2ec; --violet:#8b72ff;
+  --pink:#ff62c4; --text:#eef4ff; --muted:#9aabd0; --danger:#ff6b86;
+  --line:#2b3d68; --display:Arial,sans-serif; --body:Arial,sans-serif; --mono:Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:radial-gradient(circle at 10% 10%,rgba(69,226,236,.12),transparent 25%),radial-gradient(circle at 88% 15%,rgba(139,114,255,.14),transparent 26%),radial-gradient(circle at 50% 95%,rgba(255,98,196,.08),transparent 28%),linear-gradient(135deg,#050b18,#0a1428 55%,#081022);color:var(--text);font-family:var(--body);min-height:100vh;overflow-x:hidden}
+/* Perf fix: the animated backdrop grid used to animate background-position, which
+   forces the browser to repaint the whole viewport on every frame forever (this was
+   the main cause of the file feeling sluggish, especially on phones/low-end laptops).
+   It now animates `transform` instead, which the GPU can composite cheaply, and the
+   layer is doubled so the loop still looks seamless. */
+body:before{content:"";position:fixed;inset:-38px -38px auto auto;width:calc(100% + 76px);height:calc(100% + 76px);pointer-events:none;background-image:linear-gradient(rgba(69,226,236,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(69,226,236,.045) 1px,transparent 1px);background-size:38px 38px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.9),transparent 90%);will-change:transform;animation:gridDrift 18s linear infinite;z-index:0}
+@keyframes gridDrift{from{transform:translate3d(0,0,0)}to{transform:translate3d(38px,38px,0)}}
+.page{display:none;min-height:100vh;position:relative;isolation:isolate}
+.page:after{content:"";position:absolute;width:360px;height:360px;border-radius:50%;right:-130px;bottom:-160px;background:radial-gradient(circle,rgba(69,226,236,.13),transparent 65%);filter:blur(8px);pointer-events:none;will-change:transform;animation:floatOrb 8s ease-in-out infinite;z-index:-1}
+.page.active{display:block;animation:pageIn .55s ease both}
+@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes floatOrb{50%{transform:translate(-20px,-30px) scale(1.08)}}
+.scanbar{height:3px;width:100%;overflow:hidden;position:relative;z-index:50}
+.scanbar:before{content:"";position:absolute;top:0;left:0;height:100%;width:200%;background:linear-gradient(90deg,transparent,var(--cyan),var(--signal),var(--pink),transparent);will-change:transform;animation:scan 3s linear infinite}
+@keyframes scan{0%{transform:translate3d(0,0,0)}100%{transform:translate3d(-50%,0,0)}}
+header.topnav{display:flex;align-items:center;justify-content:space-between;padding:18px 5vw;border-bottom:1px solid rgba(93,117,172,.3);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);background:rgba(7,16,33,.72);position:sticky;top:0;z-index:20}
+.brand{font-weight:800;font-size:22px;letter-spacing:.3px}.brand span{color:var(--signal)}
+.chip{font-family:var(--mono);font-size:11px;padding:5px 10px;border:1px solid rgba(69,226,236,.35);border-radius:20px;color:#bfeff4;background:rgba(69,226,236,.05)}
+.logout,.navbtn,.viewbtn,.captcha-refresh{font-family:var(--mono);cursor:pointer;border-radius:10px;transition:.22s}
+.logout{font-size:13px;color:var(--muted);background:rgba(20,33,63,.7);border:1px solid #385084;padding:8px 15px}.logout:hover{color:var(--danger);border-color:var(--danger);transform:translateY(-2px);box-shadow:0 0 22px rgba(255,107,134,.12)}
+/* landing */
+.hero{max-width:1180px;margin:0 auto;padding:8vh 28px 10vh;text-align:left;position:relative;display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center;min-height:calc(100vh - 3px)}
+.hero:before{content:"";position:absolute;width:420px;height:420px;left:-180px;top:-80px;border:1px solid rgba(69,226,236,.18);border-radius:50%;box-shadow:0 0 80px rgba(69,226,236,.08);will-change:transform;animation:spinSlow 20s linear infinite;pointer-events:none}.hero:after{content:"✦  +  ?  ⌁  ◇  ✧";position:absolute;right:4%;top:8%;color:rgba(255,255,255,.18);font-size:30px;letter-spacing:18px;animation:twinkle 4s ease-in-out infinite;pointer-events:none}
+@keyframes spinSlow{to{transform:rotate(360deg)}}@keyframes twinkle{50%{opacity:.55;transform:translateY(8px)}}
+.hero h1{font-weight:900;font-size:clamp(44px,7vw,82px);line-height:.98;letter-spacing:-3px;max-width:700px}.hero h1 em{font-style:normal;background:linear-gradient(90deg,#fff,var(--cyan),var(--signal),#fff);background-size:250% auto;-webkit-background-clip:text;background-clip:text;color:transparent;animation:gradientFlow 6s ease infinite}@keyframes gradientFlow{50%{background-position:100% 50%}}
+.hero p{color:var(--muted);font-size:17px;line-height:1.65;margin-top:20px;max-width:650px}.steps{display:flex;gap:10px;flex-wrap:wrap;margin-top:28px}.steps span{font-family:var(--mono);font-size:12px;padding:10px 13px;border:1px solid rgba(69,226,236,.22);border-radius:12px;background:rgba(13,25,51,.7);box-shadow:inset 0 0 20px rgba(69,226,236,.025)}.steps b{color:var(--cyan)}
+.gate{display:grid;grid-template-columns:1fr 1fr;gap:18px;position:relative}.gate:before{content:"SCANLINE / AI RESUME INTELLIGENCE";position:absolute;top:-42px;left:3px;font:11px var(--mono);letter-spacing:2px;color:rgba(154,171,208,.7)}
+.gatecard{background:linear-gradient(145deg,rgba(22,36,71,.94),rgba(10,18,38,.96));border:1px solid #385084;border-radius:24px;padding:28px;text-align:left;cursor:pointer;color:var(--text);position:relative;overflow:hidden;min-height:250px;transition:.3s;box-shadow:0 18px 50px rgba(0,0,0,.28)}
+.gatecard:before{content:"";position:absolute;width:180px;height:180px;right:-55px;top:-70px;border-radius:50%;background:radial-gradient(circle,rgba(69,226,236,.24),transparent 68%);animation:cardPulse 5s ease-in-out infinite}.gatecard:after{content:"↗";position:absolute;right:22px;bottom:18px;font:24px var(--mono);color:var(--cyan);opacity:.7}.gatecard:hover{transform:translateY(-8px);border-color:var(--cyan);box-shadow:0 22px 60px rgba(69,226,236,.13)}.gatecard .tag{font:11px var(--mono);letter-spacing:2px;color:var(--signal);margin-bottom:16px}.gatecard h3{font-size:25px;margin-bottom:10px}.gatecard p{color:var(--muted);font-size:14px;line-height:1.6;max-width:300px}.gatecard:nth-child(2){transform:translateY(24px)}.gatecard:nth-child(2):before{background:radial-gradient(circle,rgba(139,114,255,.28),transparent 68%)}.gatecard:nth-child(2):hover{transform:translateY(14px)}
+@keyframes cardPulse{50%{transform:scale(1.18)}}
+/* auth */
+.authwrap{max-width:1060px;margin:0 auto;padding:5vh 22px 8vh;position:relative}.authwrap:before{content:"";position:absolute;left:2%;top:6%;width:160px;height:160px;border:1px solid rgba(69,226,236,.2);border-radius:50%;box-shadow:0 0 60px rgba(69,226,236,.08);animation:spinSlow 18s linear infinite}.auth-visual{min-height:330px;border:1px solid #385084;border-radius:32px;background:linear-gradient(135deg,rgba(13,25,51,.96),rgba(20,35,70,.82));position:relative;overflow:hidden;padding:34px;box-shadow:0 25px 80px rgba(0,0,0,.3);margin-bottom:24px}.auth-visual:before{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 0 46%,rgba(69,226,236,.08) 47%,transparent 48% 100%);animation:shimmer 7s linear infinite}.auth-visual:after{content:"?  ◇  ✦  +  ◌";position:absolute;right:25px;top:22px;color:rgba(255,255,255,.18);font-size:26px;word-spacing:10px;animation:twinkle 4s ease-in-out infinite}.auth-copy{max-width:600px;position:relative;z-index:2}.auth-kicker{font:11px var(--mono);letter-spacing:3px;color:var(--cyan);margin-bottom:14px}.auth-copy h1{font-size:clamp(38px,5.5vw,64px);line-height:1.02;letter-spacing:-2px}.auth-copy h1 span{color:var(--signal)}.auth-copy p{margin-top:14px;color:var(--muted);line-height:1.65;max-width:580px}.auth-status{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}.auth-status span{font:10px var(--mono);color:#d7e6ff;border:1px solid #344c7a;padding:7px 10px;border-radius:999px;background:rgba(255,255,255,.025)}.auth-orbit{position:absolute;width:230px;height:230px;border:1px dashed rgba(69,226,236,.4);border-radius:50%;right:55px;top:50px;will-change:transform;animation:spinSlow 16s linear infinite}.auth-orbit:before,.auth-orbit:after{content:"";position:absolute;border-radius:50%;background:var(--cyan);box-shadow:0 0 20px currentColor}.auth-orbit:before{width:10px;height:10px;left:15px;top:47px}.auth-orbit:after{width:7px;height:7px;right:25px;bottom:40px;background:var(--signal)}.auth-core{position:absolute;right:118px;top:116px;width:104px;height:104px;border-radius:28px;display:grid;place-items:center;background:linear-gradient(145deg,var(--cyan),#2aa9b5);color:#082031;font:800 15px var(--mono);box-shadow:0 0 55px rgba(69,226,236,.38);animation:corePulse 2.8s ease-in-out infinite}.auth-core:after{content:"";position:absolute;inset:-16px;border:1px solid rgba(255,180,61,.35);border-radius:50%;animation:spinSlow 8s linear infinite}@keyframes corePulse{50%{transform:scale(1.06);box-shadow:0 0 75px rgba(69,226,236,.55)}}@keyframes shimmer{to{transform:translateX(25%)}} 
+.back{display:inline-block;margin:4px 0 14px;color:var(--muted);font:12px var(--mono);cursor:pointer}.back:hover{color:var(--signal)}
+.tabs{display:flex;background:rgba(17,29,56,.86);border:1px solid #314776;border-radius:16px;overflow:hidden;margin-bottom:18px;box-shadow:0 10px 30px rgba(0,0,0,.18)}.tabs button{flex:1;padding:14px;background:none;border:0;color:var(--muted);font:13px var(--mono);cursor:pointer;transition:.25s}.tabs button.active{background:linear-gradient(90deg,var(--signal),#ffd477);color:#1b1607;font-weight:800}.card,.auth-panel{background:linear-gradient(145deg,rgba(21,34,66,.96),rgba(13,23,47,.96));border:1px solid #324b80;border-radius:22px;padding:28px;box-shadow:0 22px 60px rgba(0,0,0,.25)}.card h2{font-size:26px;margin-bottom:4px}.card .sub{color:var(--muted);font-size:13px;margin-bottom:18px;line-height:1.5}
+label{display:block;font:11px var(--mono);color:var(--muted);margin:13px 0 6px}input,textarea,select{width:100%;background:#09142c;border:1px solid #344e82;color:var(--text);padding:12px 13px;border-radius:10px;font:14px var(--body);transition:.22s}input:focus,textarea:focus,select:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 3px rgba(69,226,236,.1)}textarea{resize:vertical}.auth-options{margin:12px 0 14px;display:flex;align-items:center}.checkrow{display:flex!important;align-items:center;gap:8px!important;color:var(--muted)!important;font-size:12px!important;cursor:pointer}.checkrow input{width:auto!important;accent-color:var(--cyan);cursor:pointer}
+.captcha-box{display:grid;grid-template-columns:1fr 1.3fr auto;gap:8px;align-items:center;margin:8px 0 16px;padding:10px;border:1px solid #314776;border-radius:12px;background:#0b1730}.captcha-question{font:800 15px var(--mono);letter-spacing:3px;color:var(--cyan);padding:11px;border:1px dashed #4b679e;border-radius:9px;text-align:center;background:linear-gradient(90deg,rgba(69,226,236,.08),rgba(139,114,255,.08));text-shadow:0 0 10px rgba(69,226,236,.35)}.captcha-refresh{height:42px;width:42px;border:1px solid #3e5788;background:#122247;color:var(--signal);font-size:20px}.captcha-refresh:hover{transform:rotate(180deg);border-color:var(--signal)}
+.btn{margin-top:18px;width:100%;padding:14px;background:linear-gradient(90deg,var(--signal),#ffd477);color:#1a1200;border:none;border-radius:12px;font-weight:800;cursor:pointer;font-size:14.5px;position:relative;overflow:hidden}.btn:after{content:"";position:absolute;top:0;left:-30%;width:25%;height:100%;background:rgba(255,255,255,.35);transform:skewX(-20deg);animation:buttonShine 3.5s linear infinite}@keyframes buttonShine{to{left:130%}}.btn.outline{background:transparent;border:1px solid var(--cyan);color:var(--cyan)}
+.msg{font:12px var(--mono);margin-top:12px;min-height:16px}.msg.err{color:var(--danger)}.msg.ok{color:var(--cyan)}
+/* upload/dashboard */
+.shell,.dashwrap{max-width:1120px;margin:0 auto;padding:38px 20px 70px}.dropzone{border:1.5px dashed #46639b;border-radius:18px;padding:38px;text-align:center;cursor:pointer;background:linear-gradient(145deg,rgba(13,25,51,.8),rgba(15,29,58,.6));transition:.25s;box-shadow:inset 0 0 30px rgba(69,226,236,.025)}.dropzone:hover{border-color:var(--cyan);transform:translateY(-3px)}.dropzone .big{font-size:20px;font-weight:700}.filename{font:12px var(--mono);color:var(--cyan);margin-top:10px;min-height:16px}.jobmatch-wrap{margin-top:18px;padding:18px;background:rgba(69,226,236,.045);border:1px solid #344e82;border-radius:16px}.jobmatch-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.jobmatch-head h4{font-size:17px}.jobmatch-head p{color:var(--muted);font-size:12px;margin-top:3px}.job-search{margin:8px 0}
+.navrow{display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap}.navbtn{font-size:13px;padding:11px 19px;border:1px solid #3b568b;background:rgba(17,29,56,.84);color:var(--text)}.navbtn:hover{border-color:var(--cyan);transform:translateY(-2px)}.navbtn.active{background:linear-gradient(90deg,var(--cyan),#7deff4);color:#062128;border-color:var(--cyan);font-weight:800}.panel{background:rgba(247,248,255,.97);color:#18203a;border-radius:24px;padding:30px;box-shadow:0 24px 70px rgba(0,0,0,.24);animation:panelIn .55s ease both}@keyframes panelIn{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}.panel h2{font-size:24px;margin-bottom:14px}.biogrid,.match-grid,.chartgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:16px}.biobox,.match-card,.chartbox{background:#fff;border-radius:15px;padding:16px;border:1px solid #e1e4ed;box-shadow:0 10px 28px rgba(20,30,55,.05);transition:.22s}.biobox:hover,.match-card:hover,.chartbox:hover{transform:translateY(-3px);box-shadow:0 14px 34px rgba(20,30,55,.09)}.biobox h4,.match-card h4,.chartbox h4{font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.7px;color:#8a7650;margin-bottom:7px}
+/* Chart titles need to read clearly at a glance, so they get their own bolder,
+   higher-contrast, larger treatment instead of sharing the small muted label style. */
+.chartbox h4{font:800 13.5px/1.3 var(--body);letter-spacing:.2px;text-transform:none;color:#101a33;margin-bottom:10px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}.biobox p{font-size:14px;line-height:1.55}.match-card strong{font-size:25px;color:#18203a}.mini{color:#6f7280;font-size:11px;margin-top:4px}.scorebar{height:8px;background:#e8eaf0;border-radius:20px;overflow:hidden;margin-top:8px}.scorebar span{display:block;height:100%;background:linear-gradient(90deg,#f3a835,#43c7cf)}.match-note{margin-top:14px;padding:13px;background:#f6f7fa;border-radius:11px;font-size:12.5px;line-height:1.6}.chartgrid{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}.chartbox{overflow:hidden;min-height:385px;position:relative}.chartbox canvas{display:block;width:100%;height:335px;max-height:none}.chart-meta{font-size:11px;color:#737b91;margin:-4px 0 5px;line-height:1.35}.chartbox h4{font-size:14px;margin-bottom:7px}.empty{color:#777d8d;font:13px var(--mono);padding:20px 0}
+table{width:100%;border-collapse:collapse;margin-top:10px}th,td{text-align:left;padding:10px 12px;font-size:13.5px;border-bottom:1px solid #e1e4ed}th{font:11px var(--mono);text-transform:uppercase;color:#8a7650}.viewbtn{font-size:11.5px;background:#18203a;color:var(--signal);border:none;padding:7px 11px}.viewbtn:hover{background:#0e1730;transform:translateY(-2px)}
+@media(max-width:900px){.hero{grid-template-columns:1fr;padding-top:7vh}.gatecard:nth-child(2){transform:none}.gatecard:nth-child(2):hover{transform:translateY(-8px)}.auth-orbit{right:20px;opacity:.5}.auth-core{right:78px}.auth-copy{max-width:75%}}
+@media(max-width:640px){.hero{padding:5vh 16px}.hero h1{font-size:48px}.gate{grid-template-columns:1fr}.authwrap{padding:3vh 14px}.auth-visual{min-height:430px;padding:25px}.auth-copy{max-width:100%;position:relative;z-index:2}.auth-orbit{width:170px;height:170px;right:-25px;top:190px}.auth-core{right:10px;top:223px;width:88px;height:88px}.captcha-box{grid-template-columns:1fr 1.2fr}.captcha-refresh{grid-column:2}.panel{padding:20px}.chartgrid{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important}}
+
+/* FAST MODE: avoid continuous full-page repainting and long chart transitions. */
+body:before,.page:after,.hero:before,.hero:after,.auth-visual:before,.auth-visual:after,.auth-orbit,.auth-core,.gatecard:before,.btn:after{animation:none!important;will-change:auto!important}
+.page.active{animation:none!important}
+.chartgrid{content-visibility:auto;contain:layout paint style}
+
+/* Personal-details career chat */
+.resume-chat-card{margin-top:20px;border:1px solid #d8deeb;border-radius:18px;background:linear-gradient(135deg,#fff,#f4f7fb);padding:18px;box-shadow:0 12px 32px rgba(20,30,55,.06)}
+.resume-chat-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.resume-chat-kicker{font:800 10px var(--mono);letter-spacing:1px;color:#8a7650}.resume-chat-head h3{margin:4px 0 5px;color:#111c35;font-size:18px}.resume-chat-head p{margin:0;color:#6c7489;font-size:12px;line-height:1.5;max-width:650px}.resume-chat-open{border:1px solid #334d83;background:#111d38;color:#fff;border-radius:10px;padding:10px 13px;font:800 11px var(--mono);cursor:pointer;white-space:nowrap}.resume-chat-open:hover{border-color:var(--cyan);color:var(--cyan)}
+.quick-question-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:16px}.quick-question-grid button{display:flex;align-items:center;gap:9px;text-align:left;border:1px solid #dce1eb;background:#fff;color:#1c2742;border-radius:11px;padding:11px 12px;font:600 12px var(--body);cursor:pointer;transition:.16s}.quick-question-grid button span{display:grid;place-items:center;width:23px;height:23px;border-radius:7px;background:#e9fbfc;color:#149ca6;font-weight:900}.quick-question-grid button:hover{border-color:#3fc1c9;transform:translateY(-1px);box-shadow:0 7px 18px rgba(20,30,55,.07)}
+.resume-chat-answer{margin-top:13px;padding:13px 14px;border-radius:12px;background:#111d38;color:#edf3ff;border:1px solid #2e4878;min-height:70px;line-height:1.5}.resume-chat-answer b{display:block;color:#55e3eb;font-size:12px;margin-bottom:4px}.resume-chat-answer span{display:block;font-size:12px;color:#e7ecf7}.resume-chat-answer small{display:block;color:#8e9bb7;font-size:9px;margin-top:7px}.resume-chat-compose{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:10px}.resume-chat-compose input{width:100%;border:1px solid #d5dbe7;border-radius:10px;padding:11px 12px;background:#fff;color:#18203a;outline:none}.resume-chat-compose input:focus{border-color:#3fc1c9;box-shadow:0 0 0 3px rgba(63,193,201,.1)}.resume-chat-compose button{border:0;border-radius:10px;background:linear-gradient(90deg,var(--signal),#ffd477);padding:0 18px;font-weight:900;cursor:pointer;color:#171200}
+@media(max-width:700px){.resume-chat-head{flex-direction:column}.quick-question-grid{grid-template-columns:1fr}.resume-chat-compose{grid-template-columns:1fr}.resume-chat-compose button{padding:11px}}
+
+/* ================= NOTIFICATIONS + ADMIN CHAT ================= */
+.notify-btn{position:relative;border:1px solid #385084;background:rgba(20,33,63,.75);color:var(--text);border-radius:10px;padding:8px 12px;font:12px var(--mono);cursor:pointer}.notify-btn:hover{border-color:var(--cyan);color:var(--cyan)}
+.notify-dot{position:absolute;right:6px;top:5px;width:7px;height:7px;background:var(--signal);border-radius:50%;box-shadow:0 0 8px rgba(255,180,61,.7)}
+.notice-panel{margin-top:18px;background:#fff;border:1px solid #e1e4ed;border-radius:15px;padding:16px;box-shadow:0 10px 28px rgba(20,30,55,.05)}
+.notice-panel h3{font-size:15px;margin-bottom:10px;color:#18203a}.notice-item{padding:11px 0;border-bottom:1px solid #eceef4}.notice-item:last-child{border-bottom:0}.notice-item b{display:block;font-size:13px}.notice-item span{display:block;color:#737b91;font-size:11px;margin-top:3px;line-height:1.45}.notice-new{border-left:3px solid var(--cyan);padding-left:10px}
+.toast{position:fixed;right:22px;bottom:22px;z-index:10001;background:#101c36;color:#eef4ff;border:1px solid #3fc1c9;border-radius:14px;padding:14px 16px;max-width:380px;box-shadow:0 18px 50px rgba(0,0,0,.35);font-size:13px;display:none}.toast.show{display:block}.toast b{color:#45e2ec}
+.modal-backdrop{position:fixed;inset:0;background:rgba(3,8,18,.72);backdrop-filter:blur(6px);z-index:10000;display:none;align-items:center;justify-content:center;padding:20px}.modal-backdrop.show{display:flex}.chat-modal,.notification-modal{width:min(620px,100%);max-height:82vh;background:#f7f8ff;color:#18203a;border-radius:20px;border:1px solid #d9deeb;box-shadow:0 25px 80px rgba(0,0,0,.4);display:flex;flex-direction:column;overflow:hidden}.chat-head{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;background:#111d38;color:#eef4ff}.chat-head h3{font-size:16px}.chat-close{border:0;background:transparent;color:#b8c6e4;font-size:22px;cursor:pointer}.chat-messages{padding:16px;overflow:auto;min-height:260px;max-height:52vh;background:#f5f7fc}.chat-msg{max-width:82%;padding:10px 12px;border-radius:13px;margin:8px 0;font-size:13px;line-height:1.45}.chat-msg.user{margin-left:auto;background:#dff9fb}.chat-msg.admin{margin-right:auto;background:#fff;border:1px solid #e2e5ed}.chat-msg small{display:block;color:#788198;font-size:10px;margin-top:4px}.chat-compose{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px;border-top:1px solid #e1e4ed;background:#fff}.chat-compose textarea{min-height:46px;max-height:100px;resize:none}.chat-send{border:0;border-radius:10px;background:linear-gradient(90deg,var(--signal),#ffd477);padding:0 17px;font-weight:800;cursor:pointer}.admin-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.admin-action{border:1px solid #344e82;background:#18203a;color:#fff;padding:10px 13px;border-radius:10px;font:12px var(--mono);cursor:pointer}.admin-action.primary{background:linear-gradient(90deg,var(--signal),#ffd477);color:#1a1200;border-color:var(--signal)}.admin-action:hover{transform:translateY(-1px)}.professional-note{font-size:11px;color:#737b91;line-height:1.45;margin-top:6px}.auth-clean{margin-top:10px;padding:11px 12px;border:1px solid rgba(69,226,236,.22);background:rgba(69,226,236,.045);border-radius:10px;color:#7b849b;font-size:11px;line-height:1.5}.notification-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;background:#fff;border-bottom:1px solid #e3e6ef;font-size:12px;color:#66708a}.notification-clear{border:1px solid #ccd3e1;background:#fff;border-radius:9px;padding:7px 10px;font-size:11px;cursor:pointer}.notification-list{padding:14px;overflow:auto;max-height:62vh;background:#f5f7fc}.notification-item{position:relative;background:#fff;border:1px solid #e1e5ee;border-radius:14px;padding:13px 14px;margin-bottom:10px;box-shadow:0 5px 18px rgba(20,30,55,.04)}.notification-item.unread{border-left:4px solid var(--cyan);background:#fbffff}.notification-item .n-title{font-weight:800;font-size:13px;color:#18203a}.notification-item .n-message{font-size:12px;color:#59637b;line-height:1.5;margin:5px 0}.notification-item .n-meta{display:flex;flex-wrap:wrap;gap:7px;align-items:center;font-size:10px;color:#7a8499}.notification-type{border:1px solid #d7dce7;border-radius:999px;padding:3px 7px;background:#f8f9fc}.notification-status{border-radius:999px;padding:3px 7px}.notification-status.unread{background:#e6fbfd;color:#087b83}.notification-status.read{background:#eef1f5;color:#657087}.notification-read{margin-top:8px;border:1px solid #cbd3e2;background:#fff;border-radius:8px;padding:6px 9px;font-size:10px;cursor:pointer}.email-state{font-size:10px;margin-top:8px;color:#718098}.activity-note{margin-top:14px;padding:10px 12px;background:#f6f8fc;border:1px solid #e1e5ee;border-radius:10px;font-size:11px;color:#66708a}@media(max-width:640px){.notify-btn{padding:8px}.chat-compose{grid-template-columns:1fr}.chat-send{height:42px}.notification-modal{max-height:88vh}}
+.admin-notify-button{position:relative}.admin-notify-count{display:inline-flex;min-width:18px;height:18px;align-items:center;justify-content:center;margin-left:5px;border-radius:999px;background:#e8617a;color:#fff;font:700 10px var(--mono);vertical-align:middle}.resume-chat-head{align-items:flex-start!important}.resume-chat-head>div{flex:1}.resume-chat-card{overflow:hidden}</style>
+
+<!-- EmailJS lets this page send real emails through a connected Gmail account,
+     directly from the browser, with no backend server required. -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs" type="module"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js"></script>
+</head>
+
+<body>
+
+<div class="scanbar"></div>
+
+
+<!-- ================= LANDING ================= -->
+
+<section class="page active" id="page-landing">
+
+<div class="hero">
+
+<div style="font:11px var(--mono);letter-spacing:3px;color:var(--cyan);margin-bottom:18px">SCANLINE / AI RESUME INTELLIGENCE</div>
+<h1>
+Every resume,<br>
+<em>scanned in seconds.</em>
+</h1>
+
+<p>
+Upload a resume and choose a software role or add a job description — Scanline compares the resume against the target and explains the match score.
+</p>
+
+<div class="steps">
+<span><b>01</b> Log in</span>
+<span><b>02</b> Upload & describe the role</span>
+<span><b>03</b> Read the scan</span>
+</div>
+
+
+<div class="gate">
+
+<button class="gatecard" id="candidateBtn">
+
+<div class="tag">Candidate</div>
+
+<h3>Scan my resume</h3>
+
+<p>
+Sign up or log in with email, password and phone
+to upload your resume.
+</p>
+
+</button>
+
+
+<button class="gatecard" id="adminBtn">
+
+<div class="tag">Administrator</div>
+
+<h3>Review candidates</h3>
+
+<p>
+Log in with your registered administrator account
+to securely review registered candidates.
+</p>
+
+</button>
+
+</div>
+
+</div>
+
+</section>
+
+
+<!-- ================= USER LOGIN ================= -->
+
+<section class="page" id="page-user-auth">
+
+<div class="authwrap">
+
+<div class="auth-visual">
+  <div class="auth-copy">
+    <div class="auth-kicker">SCANLINE // SECURE IDENTITY GATE</div>
+    <h1>Decode your <span>career.</span></h1>
+    <p>Enter the Scanline workspace to turn your resume into a live skill map, job-fit score and improvement plan.</p>
+    <div class="auth-status"><span>● ANALYSIS READY</span><span>◎ RESUME INTELLIGENCE</span><span>↗ JOB MATCH</span></div>
+  </div>
+  <div class="auth-orbit"></div><div class="auth-core">SCAN</div>
+</div>
+
+<span class="back" onclick="showPage('page-landing')">
+← back
+</span>
+
+<div class="tabs">
+
+<button
+class="active"
+id="ut-login"
+onclick="setAuthTab('user','login')">
+
+Log in
+
+</button>
+
+
+<button
+id="ut-signup"
+onclick="setAuthTab('user','signup')">
+
+Sign up
+
+</button>
+
+</div>
+
+
+<div class="auth-panel">
+<div class="card">
+
+<h2 id="user-auth-title">
+Candidate login
+</h2>
+
+<div class="sub">
+Access your resume scans.
+</div>
+
+
+<div id="user-signup-fields" style="display:none">
+<label>Phone number</label>
+<input id="u-phone" type="tel" placeholder="Enter your phone number" autocomplete="tel" inputmode="tel">
+</div>
+
+<label>Professional email address</label>
+<input id="u-email" name="scanline-professional-email" type="email" placeholder="Email or registered phone" autocomplete="off" autocapitalize="none" spellcheck="false" readonly onfocus="this.removeAttribute('readonly')" required>
+<div class="professional-note">Use the same email or registered phone you used when creating your account. You only need to sign up once.</div>
+
+<label>Password</label>
+<input id="u-password" name="scanline-password" type="password" placeholder="Enter your password" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')" minlength="6" required>
+
+<div class="captcha-box">
+  <div class="captcha-question" id="u-captcha-question"></div>
+  <input id="u-captcha" type="text" inputmode="text" autocomplete="off" maxlength="6" placeholder="Enter 6-character CAPTCHA">
+  <button type="button" class="captcha-refresh" onclick="makeCaptcha('u')" aria-label="Refresh CAPTCHA">↻</button>
+</div>
+
+<button
+class="btn"
+id="user-auth-submit"
+onclick="submitUserAuth()">
+
+Log in
+
+</button>
+
+
+<div
+class="msg"
+id="user-auth-msg">
+
+</div>
+
+</div>
+
+</div>
+
+</section>
+
+
+<!-- ================= ADMIN LOGIN ================= -->
+
+<section class="page" id="page-admin-auth">
+
+<div class="authwrap">
+
+<div class="auth-visual">
+  <div class="auth-copy">
+    <div class="auth-kicker">SCANLINE // ADMIN CONTROL GATE</div>
+    <h1>Command the <span>insights.</span></h1>
+    <p>Access saved candidate analyses, compare job-fit results and review resume intelligence from one animated control panel.</p>
+    <div class="auth-status"><span>● ADMIN ONLINE</span><span>◎ CANDIDATE VAULT</span><span>↗ REVIEW MODE</span></div>
+  </div>
+  <div class="auth-orbit"></div><div class="auth-core">ADMIN</div>
+</div>
+
+<span
+class="back"
+onclick="showPage('page-landing')">
+
+← back
+
+</span>
+
+
+<div class="tabs">
+
+<button
+class="active"
+id="at-login"
+onclick="setAuthTab('admin','login')">
+
+Log in
+
+</button>
+
+<button
+id="at-signup"
+onclick="setAuthTab('admin','signup')">
+
+Sign up
+
+</button>
+
+</div>
+
+
+<div class="card">
+
+<h2 id="admin-auth-title">
+Admin login
+</h2>
+
+<div class="sub">
+Manage candidate records.
+<br><span style="font-size:11px">Create an administrator account once, then use the same email and password to log in later. You do not need to sign up again.</span>
+</div>
+
+<div id="admin-signup-fields" style="display:none">
+<div class="auth-clean">Create your Scanline administrator account. You can register as many administrator accounts as your organization requires.</div>
+<label>Admin name</label>
+<input id="a-name" type="text" placeholder="Enter your name" autocomplete="name">
+
+<label>Phone number</label>
+<input id="a-phone" type="tel" placeholder="Enter your phone number" autocomplete="tel" inputmode="tel">
+</div>
+
+<label>Email</label>
+
+<input
+id="a-email"
+name="scanline-admin-email"
+type="email"
+placeholder="Enter authorized admin email"
+autocomplete="off"
+readonly
+onfocus="this.removeAttribute('readonly')"
+spellcheck="false"
+autocapitalize="none"
+required>
+
+
+<label>Password</label>
+
+<input
+id="a-password"
+name="scanline-admin-password"
+type="password"
+placeholder="Enter admin password"
+autocomplete="new-password"
+readonly
+onfocus="this.removeAttribute('readonly')"
+minlength="8"
+required>
+
+<div class="professional-note">Administrator accounts are stored locally in this Scanline demo. Each administrator must use a unique email address and can log in later with the same credentials.</div>
+
+<div class="captcha-box">
+  <div class="captcha-question" id="a-captcha-question"></div>
+  <input id="a-captcha" type="text" inputmode="text" autocomplete="off" maxlength="6" placeholder="Enter 6-character CAPTCHA">
+  <button type="button" class="captcha-refresh" onclick="makeCaptcha('a')" aria-label="Refresh CAPTCHA">↻</button>
+</div>
+
+<button
+class="btn outline"
+id="admin-auth-submit"
+onclick="submitAdminAuth()">
+
+Log in
+
+</button>
+
+
+<div
+class="msg"
+id="admin-auth-msg">
+
+</div>
+
+</div>
+</div>
+
+</div>
+
+</section>
+
+
+<!-- ================= UPLOAD ================= -->
+
+<section class="page" id="page-upload">
+
+<header class="topnav">
+
+<div class="brand">
+Scan<span>line</span>
+</div>
+
+<button
+class="logout"
+onclick="logout()">
+
+Log out
+
+</button>
+
+</header>
+
+
+<div class="shell">
+
+<h2
+style="
+font-family:var(--display);
+font-size:24px;
+margin-bottom:6px;">
+
+Upload & describe the role
+
+</h2>
+
+
+<p
+style="
+color:var(--muted);
+font-size:13.5px;
+margin-bottom:24px;">
+
+Choose a resume file or paste your resume text below.
+
+</p>
+
+
+<div
+class="dropzone"
+onclick="document.getElementById('resumeFile').click()">
+
+<div class="big">
+📄 Click to choose a resume file
+</div>
+
+<div
+style="
+color:var(--muted);
+font-size:12.5px;
+margin-top:6px;">
+
+.txt, .pdf and .docx files can be read automatically.
+
+</div>
+
+
+<div
+class="filename"
+id="filename">
+
+</div>
+
+</div>
+
+
+<input
+type="file"
+id="resumeFile"
+accept=".txt,.pdf,.docx,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+style="display:none"
+onchange="handleFile(event)">
+
+
+<label>Resume information</label>
+
+<textarea
+id="resumeText"
+rows="7"
+placeholder="Paste your resume details here...">
+
+</textarea>
+
+
+<div class="jobmatch-wrap">
+<div class="jobmatch-head">
+  <div>
+    <h4>Target job for matching</h4>
+    <p>A job target is required for a meaningful Job Match %. Pick a software role or paste a custom description.</p>
+  </div>
+</div>
+
+<label for="jobSearch">Search software jobs</label>
+<input
+  class="job-search"
+  id="jobSearch"
+  type="search"
+  placeholder="Search: DevOps, React, Python, Full Stack... "
+  oninput="filterJobRoles()">
+
+<label for="jobRole">Job description / role</label>
+<select id="jobRole" onchange="selectJobRole()">
+  <option value="">Select a software job...</option>
+</select>
+
+<label for="jobDesc">Custom job description (optional if a role is selected)</label>
+<textarea
+id="jobDesc"
+rows="5"
+placeholder="Select a software job above, or paste the job description you're targeting..."></textarea>
+</div>
+
+
+<button
+class="btn"
+onclick="analyzeResume()">
+
+Run the scan →
+
+</button>
+
+
+<div
+class="msg err"
+id="upload-msg">
+
+</div>
+
+</div>
+
+</section>
+
+
+<!-- ================= USER DASHBOARD ================= -->
+
+<section class="page" id="page-dashboard">
+
+<header class="topnav">
+
+<div class="brand">
+Scan<span>line</span>
+</div>
+
+
+<div
+style="
+display:flex;
+gap:10px;
+align-items:center;">
+
+<span class="chip" id="dash-match"></span>
+<button class="notify-btn" onclick="openNotifications()" title="Notifications">Notifications <span class="notify-dot" id="notify-dot" style="display:none"></span></button>
+<button class="logout" onclick="logout()">
+
+Log out
+
+</button>
+
+</div>
+
+</header>
+
+
+<div class="dashwrap">
+
+<div class="navrow">
+
+<button
+class="navbtn active"
+onclick="setDashTab('bio')">
+
+Bio
+
+</button>
+
+
+<button
+class="navbtn"
+onclick="setDashTab('skills')">
+
+Skills
+
+</button>
+
+
+<button
+class="navbtn"
+onclick="setDashTab('personal')">
+
+Personal details
+
+</button>
+
+</div>
+
+
+<div class="panel" id="dash-content"></div>
+</div>
+
+</section>
+
+
+<!-- ================= ADMIN DASHBOARD ================= -->
+
+<section class="page" id="page-admin-dash">
+
+<header class="topnav">
+
+<div class="brand">
+
+Scan<span>line</span>
+
+<span class="chip">
+admin
+</span>
+
+</div>
+
+
+<div style="display:flex;gap:10px;align-items:center">
+<button class="notify-btn admin-notify-button" onclick="openAdminNotifications()" title="Candidate notifications">Notifications <span class="admin-notify-count" id="admin-notify-dot" style="display:none">0</span></button>
+<button class="notify-btn" onclick="openEmailSettings()" title="Set up automatic Gmail notifications">✉ Email setup</button>
+<button
+class="logout"
+onclick="logout()">
+
+Log out
+
+</button>
+</div>
+
+</header>
+
+
+<div class="dashwrap">
+
+<div
+id="admin-view-back"
+style="
+display:none;
+margin-bottom:14px;">
+
+<span
+class="back"
+onclick="renderAdminTable()">
+
+← back to all candidates
+
+</span>
+
+</div>
+
+
+<div
+class="panel"
+id="admin-content">
+
+</div>
+
+</div>
+
+</section>
+
+
+<div class="toast" id="app-toast"></div>
+<div class="modal-backdrop" id="chat-modal">
+  <div class="chat-modal">
+    <div class="chat-head"><h3 id="chat-title">Chat with Scanline Admin</h3><button class="chat-close" onclick="closeChat()">×</button></div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-compose"><textarea id="chat-input" placeholder="Ask the admin about your job match, missing skills, resume, or career direction..."></textarea><button class="chat-send" onclick="sendChatMessage()">Send</button></div>
+  </div>
+</div>
+
+
+<div class="modal-backdrop" id="admin-notification-modal" aria-hidden="true">
+  <div class="notification-modal">
+    <div class="chat-head"><h3>Admin Notifications</h3><button class="chat-close" onclick="closeAdminNotifications()">×</button></div>
+    <div class="notification-toolbar"><span id="admin-notification-summary">Candidate notifications</span><button class="notification-clear" onclick="markAllAdminNotificationsRead()">Mark all read</button></div>
+    <div class="notification-list" id="admin-notification-list"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="email-settings-modal" aria-hidden="true">
+  <div class="notification-modal" style="max-width:560px">
+    <div class="chat-head"><h3>Gmail Notification Setup</h3><button class="chat-close" onclick="closeEmailSettings()">×</button></div>
+    <div style="padding:18px 20px;overflow:auto">
+      <p class="professional-note" style="margin-bottom:6px;font-size:12px">
+        Scanline can email a candidate the moment you finish reviewing their resume, sent through your real Gmail account using <b>EmailJS</b> (a free browser-to-email service — no backend needed). Create a free account at emailjs.com, add Gmail as an Email Service, make a template with the variables <code>{{to_email}}</code>, <code>{{to_name}}</code>, <code>{{subject}}</code> and <code>{{message}}</code>, then paste the three IDs it gives you below.
+      </p>
+      <label>EmailJS Public Key</label>
+      <input id="es-public" type="text" placeholder="e.g. AbCdEfGhIjKlMnOp" autocomplete="off">
+      <label>EmailJS Service ID (connected to Gmail)</label>
+      <input id="es-service" type="text" placeholder="e.g. service_abc1234" autocomplete="off">
+      <label>EmailJS Template ID</label>
+      <input id="es-template" type="text" placeholder="e.g. template_xyz789" autocomplete="off">
+      <div class="auth-options"><label class="checkrow"><input type="checkbox" id="es-enabled"> Automatically email each candidate when I open their resume review</label></div>
+      <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap">
+        <button class="admin-action primary" onclick="saveEmailSettings()" type="button">Save settings</button>
+        <button class="admin-action" onclick="testEmailSettings()" type="button">Send test email to myself</button>
+      </div>
+      <div class="msg" id="es-msg"></div>
+      <div class="auth-clean" style="margin-top:16px">Haven't set this up yet? No problem — every candidate's profile still has a <b>"Notify via Gmail"</b> button that opens a pre-filled Gmail compose window addressed to that candidate, so you can send the notification yourself in one click, using your own Gmail account, with nothing to configure.</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="notification-modal" aria-hidden="true">
+  <div class="notification-modal">
+    <div class="chat-head"><h3>Notifications</h3><button class="chat-close" onclick="closeNotifications()">×</button></div>
+    <div class="notification-toolbar"><span id="notification-summary">Notification history</span><button class="notification-clear" onclick="markAllNotificationsRead()">Mark all read</button></div>
+    <div class="notification-list" id="notification-list"></div>
+  </div>
+</div>
+
+<script>
+/* ================= LIGHTWEIGHT OFFLINE CHART ENGINE =================
+   No external Chart.js dependency, no long animations, and no per-frame
+   responsive work. Charts render only when the Skills tab is opened.
+*/
+(function(){
+  const PALETTE=['#3fc1c9','#e8a33d','#7c83fd','#e8617a','#7bd389','#b38cff','#6aa6ff','#f3c969'];
+
+  function Chart(ctx, config){
+    this.canvas=ctx.canvas;
+    this.ctx=ctx;
+    this.config=config||{};
+    this.draw();
+  }
+  Chart.prototype.destroy=function(){
+    if(this.ctx){
+      this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
+      this.canvas.removeAttribute('data-chart-ready');
+    }
+  };
+  Chart.prototype.size=function(){
+    const c=this.canvas;
+    const w=Math.max(360,Math.floor(c.parentElement.clientWidth||520));
+    const h=320, d=Math.min(window.devicePixelRatio||1,2);
+    c.width=w*d; c.height=h*d; c.style.width='100%'; c.style.height=h+'px';
+    this.ctx.setTransform(d,0,0,d,0,0);
+    return {w,h};
+  };
+  Chart.prototype.draw=function(){
+    const ctx=this.ctx,cfg=this.config,sz=this.size(),w=sz.w,h=sz.h;
+    const data=(cfg.data&&cfg.data.datasets)||[];
+    const labels=(cfg.data&&cfg.data.labels)||[];
+    const type=cfg.type||'bar';
+    ctx.clearRect(0,0,w,h);
+    ctx.font='12px Arial';
+    ctx.textBaseline='middle';
+    ctx.lineWidth=1;
+    ctx.strokeStyle='#d9dce8';
+    ctx.fillStyle='#596486';
+
+    const vals=(data[0]?.data||[]).map(v=>{
+      if(Array.isArray(v)) return Number(v[1])||0;
+      if(v&&typeof v==='object') return Number(v.y)||0;
+      return Number(v)||0;
+    });
+    const maxCfg=Number(cfg.options?.max||100);
+    const max=Math.max(1,maxCfg,...vals);
+    const left=type==='horizontalBar'?142:52,right=20,top=28,bottom=type==='radar'||type==='polarArea'?28:52;
+    const pw=w-left-right,ph=h-top-bottom;
+
+    const wrapLabel=(label,maxChars=16)=>{
+      const words=String(label).split(/\s+/), lines=[]; let line='';
+      words.forEach(word=>{
+        if((line+' '+word).trim().length>maxChars&&line){lines.push(line);line=word;}
+        else line=(line+' '+word).trim();
+      });
+      if(line)lines.push(line);
+      return lines.slice(0,2);
+    };
+    const grid=()=>{
+      for(let i=0;i<=4;i++){
+        const y=top+ph*i/4;
+        ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(left+pw,y);ctx.stroke();
+        const v=Math.round(max*(1-i/4));
+        ctx.fillStyle='#596486';ctx.font='11px Arial';ctx.fillText(String(v),8,y);
+      }
+    };
+    const bar=(horizontal=false,stacked=false)=>{
+      if(horizontal){
+        const row=ph/Math.max(1,labels.length);
+        labels.forEach((lab,i)=>{
+          const y=top+i*row+row*.16, v=Math.max(0,Number(vals[i])||0);
+          const barW=pw*v/max;
+          ctx.fillStyle=PALETTE[i%PALETTE.length];
+          ctx.fillRect(left,y,barW,row*.58);
+          ctx.fillStyle='#1b2744';ctx.font='bold 11px Arial';ctx.textAlign='left';ctx.textBaseline='middle';
+          const name=String(lab);
+          ctx.fillText(name.length>22?name.slice(0,21)+'…':name,8,y+row*.29);
+          ctx.fillStyle='#596486';ctx.font='bold 11px Arial';
+          ctx.fillText(Math.round(v)+'%',Math.min(left+barW+6,left+pw-28),y+row*.29);
+        });
+        return;
+      }
+      grid();
+      const count=Math.max(1,labels.length);
+      const slot=pw/count;
+      const bw=Math.min(54,slot*.58);
+      labels.forEach((lab,i)=>{
+        const v=Math.max(0,Number(vals[i])||0),x=left+(i+.5)*slot-bw/2,y=top+ph-ph*v/max;
+        ctx.fillStyle=PALETTE[i%PALETTE.length];ctx.fillRect(x,y,bw,top+ph-y);
+        ctx.fillStyle='#1b2744';ctx.font='bold 10px Arial';ctx.textAlign='center';ctx.textBaseline='top';
+        const name=String(lab), words=name.split(/\s+/); let lines=[]; let line='';
+        words.forEach(word=>{const test=(line+' '+word).trim();if(ctx.measureText(test).width>slot*.92&&line){lines.push(line);line=word;}else line=test;});
+        if(line)lines.push(line);
+        if(lines.length===1 && ctx.measureText(lines[0]).width>slot*.92){
+          lines=[name.length>10?name.slice(0,9)+'…':name];
+        }
+        const labelY=top+ph+10;
+        lines.slice(0,2).forEach((txt,k)=>ctx.fillText(txt,x,labelY+k*12));
+      });
+      ctx.textAlign='left';ctx.textBaseline='middle';
+    };
+    const line=()=>{
+      grid();
+      if(!vals.length)return;
+      const count=vals.length;
+      ctx.beginPath();
+      vals.forEach((v,i)=>{
+        const x=left+(count===1?pw/2:pw*i/(count-1)),y=top+ph-(Math.max(0,v)/max)*ph;
+        i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+      });
+      ctx.strokeStyle='#3fc1c9';ctx.lineWidth=3;ctx.stroke();
+      vals.forEach((v,i)=>{
+        const x=left+(count===1?pw/2:pw*i/(count-1)),y=top+ph-(Math.max(0,v)/max)*ph;
+        ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#3fc1c9';ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#1b2744';ctx.font='bold 10px Arial';ctx.textAlign='center';ctx.textBaseline='bottom';ctx.fillText(Math.round(v)+'%',x,y-8);
+      });
+      labels.forEach((lab,i)=>{
+        const x=left+(labels.length===1?pw/2:pw*i/(labels.length-1));
+        ctx.save();
+        ctx.translate(x,top+ph+13);
+        ctx.rotate(-Math.PI/6);
+        ctx.fillStyle='#596486';ctx.font='10px Arial';ctx.textAlign='right';ctx.textBaseline='top';
+        const name=String(lab), short=name.length>16?name.slice(0,15)+'…':name;
+        ctx.fillText(short,0,0);
+        ctx.restore();
+      });
+      ctx.textAlign='left';ctx.textBaseline='middle';
+    };
+    const donut=(polar=false)=>{
+      const cx=left+pw/2,cy=top+ph/2,r=Math.min(pw,ph)*.34,total=vals.reduce((a,v)=>a+Math.max(0,v),0)||1;
+      let start=-Math.PI/2;
+      vals.forEach((v,i)=>{
+        const ang=(Math.max(0,v)/total)*Math.PI*2;
+        ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,start,start+ang);ctx.closePath();
+        ctx.fillStyle=PALETTE[i%PALETTE.length];ctx.fill();start+=ang;
+      });
+      if(!polar){
+        ctx.beginPath();ctx.fillStyle='#fff';ctx.arc(cx,cy,r*.56,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#17213a';ctx.font='bold 20px Arial';ctx.textAlign='center';
+        ctx.fillText((cfg.centerText||Math.round(vals[0]||0)+'%'),cx,cy);
+        ctx.textAlign='left';
+      }
+      const legendTop=h-38;
+      const legendCols=Math.min(3,Math.max(1,Math.ceil(labels.length/2)));
+      const colW=(w-left-right)/legendCols;
+      labels.forEach((lab,i)=>{
+        const col=i%legendCols,row=Math.floor(i/legendCols);
+        const lx=left+col*colW, ly=legendTop+row*16;
+        const text=String(lab).length>15?String(lab).slice(0,14)+'…':String(lab);
+        ctx.fillStyle=PALETTE[i%PALETTE.length];ctx.fillRect(lx,ly-5,9,9);
+        ctx.fillStyle='#596486';ctx.font='10px Arial';ctx.textAlign='left';ctx.fillText(text,lx+13,ly);
+      });
+    };
+    const radar=(polar=false)=>{
+      const n=vals.length||1,cx=left+pw/2,cy=top+ph/2,r=Math.min(pw,ph)*.34;
+      for(let ring=1;ring<=4;ring++){
+        ctx.beginPath();
+        for(let i=0;i<n;i++){
+          const a=-Math.PI/2+i*2*Math.PI/n,x=cx+Math.cos(a)*r*ring/4,y=cy+Math.sin(a)*r*ring/4;
+          i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+        }
+        ctx.closePath();ctx.strokeStyle='#d9dce8';ctx.stroke();
+      }
+      for(let i=0;i<n;i++){
+        const a=-Math.PI/2+i*2*Math.PI/n;
+        ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);ctx.strokeStyle='#e5e7ef';ctx.stroke();
+        const lx=cx+Math.cos(a)*(r+28),ly=cy+Math.sin(a)*(r+28);
+        ctx.fillStyle='#1b2744';ctx.font='bold 10px Arial';
+        ctx.textAlign=Math.cos(a)>0.35?'left':(Math.cos(a)<-0.35?'right':'center');
+        ctx.textBaseline='middle';
+        const name=String(labels[i]);
+        const lines=wrapLabel(name,12);
+        lines.slice(0,2).forEach((t,k)=>ctx.fillText(t,lx,ly+(k-(lines.length-1)/2)*12));
+      }
+      ctx.beginPath();
+      vals.forEach((v,i)=>{const a=-Math.PI/2+i*2*Math.PI/n,x=cx+Math.cos(a)*r*Math.min(v,max)/max,y=cy+Math.sin(a)*r*Math.min(v,max)/max;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+      ctx.closePath();ctx.fillStyle='rgba(63,193,201,.22)';ctx.fill();ctx.strokeStyle='#3fc1c9';ctx.lineWidth=2;ctx.stroke();
+    };
+    const scatter=()=>{
+      // Use a dedicated label column so every skill name stays readable.
+      const plotW=Math.max(190,Math.min(pw*.58,pw-180));
+      const plotLeft=left, plotRight=plotLeft+plotW;
+      const labelLeft=plotRight+22;
+      const pts=data.flatMap(d=>d.data||[]);
+      const xs=pts.map(p=>Number(p.x)||0), ys=pts.map(p=>Number(p.y)||0);
+      const xmax=Math.max(1,...xs),ymax=Math.max(1,...ys);
+      for(let i=0;i<=4;i++){
+        const y=top+ph*i/4;
+        ctx.beginPath();ctx.moveTo(plotLeft,y);ctx.lineTo(plotRight,y);ctx.strokeStyle='#d9dce8';ctx.stroke();
+        ctx.fillStyle='#596486';ctx.font='11px Arial';ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(String(Math.round(ymax*(1-i/4))),plotLeft-8,y);
+      }
+      ctx.textAlign='center';ctx.fillStyle='#596486';ctx.font='10px Arial';
+      ctx.fillText('Resume frequency',plotLeft+plotW/2,top+ph+28);
+      pts.forEach((p,i)=>{
+        const x=plotLeft+(Number(p.x)||0)/xmax*plotW;
+        const y=top+ph-(Number(p.y)||0)/ymax*ph;
+        ctx.fillStyle=PALETTE[i%PALETTE.length];
+        ctx.beginPath();ctx.arc(x,y,6,0,Math.PI*2);ctx.fill();
+        ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();
+        ctx.beginPath();ctx.moveTo(x+6,y);ctx.lineTo(labelLeft-8,top+18+i*Math.min(31,(ph-30)/Math.max(1,pts.length-1)));ctx.strokeStyle='#b9bfce';ctx.lineWidth=1;ctx.stroke();
+      });
+      const rowH=Math.min(31,(ph-30)/Math.max(1,pts.length));
+      pts.forEach((p,i)=>{
+        const yy=top+12+i*rowH;
+        const label=String(p.label||'Skill');
+        const lines=wrapLabel(label,16).slice(0,2);
+        ctx.fillStyle=PALETTE[i%PALETTE.length];ctx.fillRect(labelLeft,yy-5,8,8);
+        ctx.fillStyle='#1b2744';ctx.font='bold 10px Arial';ctx.textAlign='left';ctx.textBaseline='middle';
+        lines.forEach((lineText,k)=>ctx.fillText(lineText,labelLeft+14,yy+k*11));
+        ctx.fillStyle='#737b91';ctx.font='9px Arial';
+        ctx.fillText(`freq ${Number(p.x)||0} · ${Math.round(Number(p.y)||0)}%`,labelLeft+14,yy+lines.length*11+1);
+      });
+      ctx.textAlign='left';ctx.textBaseline='middle';
+    };
+    const stacked=()=>{
+      const ds=data,row=ph/Math.max(1,labels.length);
+      labels.forEach((lab,i)=>{
+        let x=left;
+        ds.forEach((d,k)=>{
+          const v=Math.max(0,Number(d.data?.[i])||0);
+          ctx.fillStyle=PALETTE[k%PALETTE.length];ctx.fillRect(x,top+i*row+row*.18,pw*v/max,row*.55);x+=pw*v/max;
+        });
+        ctx.fillStyle='#1b2744';ctx.font='bold 11px Arial';ctx.fillText(String(lab),8,top+i*row+row*.45);
+      });
+      ds.forEach((d,k)=>{const lx=left+k*115;ctx.fillStyle=PALETTE[k%PALETTE.length];ctx.fillRect(lx,8,9,9);ctx.fillStyle='#596486';ctx.font='10px Arial';ctx.fillText(d.label||'',lx+13,13);});
+    };
+
+    if(type==='bar')bar(false);
+    else if(type==='horizontalBar')bar(true);
+    else if(type==='line')line();
+    else if(type==='doughnut')donut(false);
+    else if(type==='polarArea')donut(true);
+    else if(type==='radar')radar(false);
+    else if(type==='scatter')scatter();
+    else if(type==='stacked')stacked();
+    this.canvas.setAttribute('data-chart-ready','1');
+  };
+  window.Chart=Chart;
+})();
+
+/* ================= DATA ================= */
+
+const STORAGE_KEY = 'scanline_app_data_v5';
+const REMEMBER_USER_KEY = 'scanline_remember_user';
+const REMEMBER_ADMIN_KEY = 'scanline_remember_admin';
+const NOTIFICATION_CONFIG={emailEndpoint:'',smsEndpoint:'',appName:'Scanline'};
+const EMAIL_SETTINGS_KEY='scanline_email_settings_v1';
+function loadEmailSettings(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(EMAIL_SETTINGS_KEY)||'null');
+    if(raw&&typeof raw==='object')return {publicKey:raw.publicKey||'',serviceId:raw.serviceId||'',templateId:raw.templateId||'',enabled:!!raw.enabled};
+  }catch(e){console.warn('Could not read email settings:',e);}
+  return {publicKey:'',serviceId:'',templateId:'',enabled:false};
+}
+let emailSettings=loadEmailSettings();
+function saveEmailSettingsToStorage(){try{localStorage.setItem(EMAIL_SETTINGS_KEY,JSON.stringify(emailSettings));}catch(e){console.warn('Could not save email settings:',e);}}
+function initEmailJS(){if(window.emailjs&&emailSettings.publicKey){try{emailjs.init({publicKey:emailSettings.publicKey});}catch(e){console.warn('EmailJS init failed:',e);}}}
+function emailJsReady(){return Boolean(window.emailjs&&emailSettings.enabled&&emailSettings.publicKey&&emailSettings.serviceId&&emailSettings.templateId);}
+async function sendAutomaticReviewSMS(user,notification,activity){
+  if(!user?.phone)return 'no-phone';
+  const message='Scanline: Your resume has been reviewed by the administrator. Log in to your Scanline account to view your review, job match score, and messages.';
+  if(!NOTIFICATION_CONFIG.smsEndpoint){
+    notification.smsStatus='not-configured';
+    saveDB();
+    return 'not-configured';
+  }
+  try{
+    const response=await fetch(NOTIFICATION_CONFIG.smsEndpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:'profile_viewed',to:user.phone,phone:user.phone,userId:user.id||user.email,userName:user.profile?.name||'Candidate',viewedAt:notification.createdAt,message,notificationId:notification.id,activity})});
+    if(!response.ok)throw new Error('SMS service returned '+response.status);
+    notification.smsStatus='sent';
+    saveDB();
+    return 'sent';
+  }catch(err){
+    console.warn('Automatic SMS failed:',err);
+    notification.smsStatus='failed';
+    notification.smsError=String(err?.message||'Unknown error');
+    saveDB();
+    return 'failed';
+  }
+}
+function openEmailSettings(){
+  if(!session||session.type!=='admin')return;
+  const modal=document.getElementById('email-settings-modal');
+  if(!modal)return;
+  const pub=document.getElementById('es-public'),svc=document.getElementById('es-service'),tpl=document.getElementById('es-template'),en=document.getElementById('es-enabled'),msg=document.getElementById('es-msg');
+  if(pub)pub.value=emailSettings.publicKey;
+  if(svc)svc.value=emailSettings.serviceId;
+  if(tpl)tpl.value=emailSettings.templateId;
+  if(en)en.checked=emailSettings.enabled;
+  if(msg){msg.textContent='';msg.className='msg';}
+  modal.classList.add('show');modal.setAttribute('aria-hidden','false');
+}
+function closeEmailSettings(){const modal=document.getElementById('email-settings-modal');if(modal){modal.classList.remove('show');modal.setAttribute('aria-hidden','true');}}
+function saveEmailSettings(){
+  const publicKey=val('es-public'),serviceId=val('es-service'),templateId=val('es-template');
+  const enabled=document.getElementById('es-enabled')?.checked||false;
+  const msg=document.getElementById('es-msg');
+  if(enabled&&(!publicKey||!serviceId||!templateId)){setMsg(msg,'Enter the Public Key, Service ID and Template ID before enabling automatic emails.',true);return;}
+  emailSettings={publicKey,serviceId,templateId,enabled};
+  saveEmailSettingsToStorage();
+  initEmailJS();
+  setMsg(msg,enabled?'Saved. Candidates will now automatically get a real Gmail email the moment you review their resume.':'Saved. Automatic emails are off — use the "Notify via Gmail" button on a candidate profile to send one manually.',false);
+}
+async function testEmailSettings(){
+  const msg=document.getElementById('es-msg');
+  if(!session||session.type!=='admin')return;
+  if(!window.emailjs){setMsg(msg,'The EmailJS library did not load (check your internet connection) and cannot send a test email.',true);return;}
+  const publicKey=val('es-public'),serviceId=val('es-service'),templateId=val('es-template');
+  if(!publicKey||!serviceId||!templateId){setMsg(msg,'Fill in the Public Key, Service ID and Template ID first.',true);return;}
+  setMsg(msg,'Sending test email…',false);
+  try{
+    emailjs.init({publicKey});
+    await emailjs.send(serviceId,templateId,{to_email:session.email,to_name:'Admin',subject:'Scanline test notification',message:'This is a test email from Scanline. If you received this, your Gmail notification setup is working correctly.',app_name:NOTIFICATION_CONFIG.appName});
+    setMsg(msg,'Test email sent — check the inbox for '+session.email+'.',false);
+  }catch(err){
+    console.warn('Test email failed:',err);
+    setMsg(msg,'Test email failed: '+(err?.text||err?.message||'Unknown error')+'. Double-check the IDs and that Gmail is connected as the Service in your EmailJS account.',true);
+  }
+}
+function gmailComposeUrl(user,subject,body){
+  const params=new URLSearchParams({view:'cm',fs:'1',to:user.email,su:subject,body});
+  return 'https://mail.google.com/mail/?'+params.toString();
+}
+function loadDB(){
+  try{
+    const raw=localStorage.getItem(STORAGE_KEY)||localStorage.getItem('scanline_app_data_v4')||localStorage.getItem('scanline_app_data_v3');
+    const saved=JSON.parse(raw||'null');
+    if(saved&&typeof saved==='object')return {users:Array.isArray(saved.users)?saved.users:[],admins:Array.isArray(saved.admins)?saved.admins:[],adminActivity:Array.isArray(saved.adminActivity)?saved.adminActivity:[],adminNotifications:Array.isArray(saved.adminNotifications)?saved.adminNotifications:[]};
+  }catch(e){console.warn('Scanline storage could not be read:',e);}
+  return {users:[],admins:[],adminActivity:[],adminNotifications:[]};
+}
+const db=loadDB();
+const DEFAULT_ADMINS=[
+  {id:'ADM-001',name:'Primary Admin',email:'admin1@scanline.local',password:'ScanlineAdmin@2026'},
+  {id:'ADM-002',name:'Secondary Admin',email:'admin2@scanline.local',password:'ScanlineAdmin@2026'}
+];
+function normalizeAdmins(){
+  const existing=Array.isArray(db.admins)?db.admins.filter(a=>a&&a.email&&a.password):[];
+  const unique=[]; const seen=new Set();
+  existing.forEach(a=>{
+    const k=String(a.email).trim().toLowerCase();
+    if(!seen.has(k)){seen.add(k);unique.push(a);}
+  });
+  /* Remove only the two old demo credentials from earlier Scanline versions.
+     There is no administrator-count limit in this version. */
+  const legacyOnly=unique.length>0 && unique.every(a=>DEFAULT_ADMINS.some(d=>d.email.toLowerCase()===String(a.email).trim().toLowerCase() && d.password===a.password));
+  db.admins=legacyOnly ? [] : unique;
+}
+normalizeAdmins();
+function authorizedAdmins(){return db.admins;}
+function saveDB(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(db));}catch(e){}} saveDB();
+function ensureUserCommunication(user){if(!user.notifications)user.notifications=[];if(!user.messages)user.messages=[];if(!user.resumeQuestions)user.resumeQuestions=[];return user;}
+function showToast(title,message){const t=document.getElementById('app-toast');if(!t)return;t.innerHTML='<b>'+escapeHtml(title)+'</b><br>'+escapeHtml(message);t.classList.add('show');clearTimeout(window.__toastTimer);window.__toastTimer=setTimeout(()=>t.classList.remove('show'),5200);}
+function formatTime(ts){try{return new Date(ts).toLocaleString([], {dateStyle:'medium',timeStyle:'short'});}catch(e){return '';}}
+function addUserNotification(user,title,message,opts={}){ensureUserCommunication(user);const n={id:'n_'+Date.now()+'_'+Math.random().toString(36).slice(2),title,message,type:opts.type||'Admin Review',fromAdmin:opts.fromAdmin!==false,read:false,createdAt:opts.createdAt||new Date().toISOString(),emailStatus:opts.emailStatus||'pending'};user.notifications.unshift(n);user.notifications=user.notifications.slice(0,50);saveDB();return n;}
+function unreadCount(user){return (user?.notifications||[]).filter(n=>!n.read).length;}
+function addAdminNotification(title,message,opts={}){
+  if(!Array.isArray(db.adminNotifications))db.adminNotifications=[];
+  const n={id:'an_'+Date.now()+'_'+Math.random().toString(36).slice(2),title,message,type:opts.type||'Candidate Message',read:false,createdAt:opts.createdAt||new Date().toISOString(),candidateEmail:opts.candidateEmail||'',candidateName:opts.candidateName||'Candidate'};
+  db.adminNotifications.unshift(n);db.adminNotifications=db.adminNotifications.slice(0,100);saveDB();return n;
+}
+function unreadAdminCount(){return (db.adminNotifications||[]).filter(n=>!n.read).length;}
+function updateAdminNotificationDot(){const dot=document.getElementById('admin-notify-dot');if(!dot)return;const count=unreadAdminCount();dot.style.display=count>0?'inline-flex':'none';dot.textContent=count>99?'99+':String(count);}
+function adminNotificationMarkup(n){return `<article class="notification-item ${n.read?'':'unread'}"><div class="n-title">🔔 ${escapeHtml(n.title)}</div><div class="n-message">${escapeHtml(n.message)}</div><div class="n-meta"><span>${escapeHtml(formatTime(n.createdAt))}</span><span class="notification-type">${escapeHtml(n.type||'Notification')}</span><span class="notification-status ${n.read?'read':'unread'}">${n.read?'Read':'Unread'}</span></div>${n.candidateEmail?`<button class="notification-read" onclick="adminNotificationAction('${escapeHtml(n.id)}')">${n.read?'Open chat':'Read & open chat'}</button>`:''}</article>`;}
+function renderAdminNotifications(){const list=document.getElementById('admin-notification-list');const summary=document.getElementById('admin-notification-summary');if(!list)return;const items=db.adminNotifications||[];if(summary)summary.textContent=`${items.length} notification${items.length===1?'':'s'} · ${unreadAdminCount()} unread`;list.innerHTML=items.length?items.map(adminNotificationMarkup).join(''):'<div class="empty">No candidate notifications yet. New candidate messages will appear here.</div>';updateAdminNotificationDot();}
+function openAdminNotifications(){if(!session||session.type!=='admin')return;renderAdminNotifications();const modal=document.getElementById('admin-notification-modal');if(modal){modal.classList.add('show');modal.setAttribute('aria-hidden','false');}}
+function closeAdminNotifications(){const modal=document.getElementById('admin-notification-modal');if(modal){modal.classList.remove('show');modal.setAttribute('aria-hidden','true');}}
+function markAllAdminNotificationsRead(){if(!session||session.type!=='admin')return;(db.adminNotifications||[]).forEach(n=>n.read=true);saveDB();renderAdminNotifications();}
+function adminNotificationAction(id){if(!session||session.type!=='admin')return;const n=(db.adminNotifications||[]).find(x=>x.id===id);if(!n)return;n.read=true;saveDB();closeAdminNotifications();if(n.candidateEmail)openChat(n.candidateEmail,'admin');else renderAdminNotifications();}
+
+function updateNotificationDot(user){const dot=document.getElementById('notify-dot');if(!dot)return;const count=unreadCount(user);dot.style.display=count>0?'block':'none';dot.setAttribute('data-count',String(count));dot.title=count+' unread notification'+(count===1?'':'s');}
+function notificationMarkup(n){const status=n.read?'Read':'Unread';const emailStatus=n.emailStatus==='sent'?(n.emailProvider==='gmail-manual'?'Emailed via Gmail (sent manually)':n.emailProvider==='gmail'?'Emailed via Gmail':'Email sent'):n.emailStatus==='failed'?'Email delivery failed'+(n.emailError?': '+n.emailError:''):n.emailStatus==='not-configured'?'Email not sent yet — see Email setup':'Email queued';return `<article class="notification-item ${n.read?'':'unread'}"><div class="n-title">🔔 ${escapeHtml(n.title)}</div><div class="n-message">${escapeHtml(n.message)}</div><div class="n-meta"><span>${escapeHtml(formatTime(n.createdAt))}</span><span class="notification-type">${escapeHtml(n.type||'Notification')}</span><span class="notification-status ${n.read?'read':'unread'}">${status}</span></div><div class="email-state">${escapeHtml(emailStatus)}</div>${n.read?'':'<button class="notification-read" onclick="markNotificationRead(\''+escapeHtml(n.id)+'\')">Mark as read</button>'}</article>`;}
+function renderNotifications(user){ensureUserCommunication(user);const list=document.getElementById('notification-list');const summary=document.getElementById('notification-summary');if(!list)return;const items=user.notifications||[];if(summary)summary.textContent=`${items.length} notification${items.length===1?'':'s'} · ${unreadCount(user)} unread`;list.innerHTML=items.length?items.map(notificationMarkup).join(''):'<div class="empty">No notifications yet. New administrator reviews will appear here.</div>';updateNotificationDot(user);}
+function openNotifications(){if(!session||session.type!=='user')return;const user=db.users.find(u=>String(u.email).toLowerCase()===String(session.email).toLowerCase());if(!user)return;renderNotifications(user);const modal=document.getElementById('notification-modal');if(modal){modal.classList.add('show');modal.setAttribute('aria-hidden','false');}}
+function closeNotifications(){const modal=document.getElementById('notification-modal');if(modal){modal.classList.remove('show');modal.setAttribute('aria-hidden','true');}}
+function markNotificationRead(id){if(!session||session.type!=='user')return;const user=db.users.find(u=>String(u.email).toLowerCase()===String(session.email).toLowerCase());if(!user)return;ensureUserCommunication(user);const n=user.notifications.find(x=>x.id===id);if(n){n.read=true;saveDB();renderNotifications(user);}}
+function markAllNotificationsRead(){if(!session||session.type!=='user')return;const user=db.users.find(u=>String(u.email).toLowerCase()===String(session.email).toLowerCase());if(!user)return;ensureUserCommunication(user);user.notifications.forEach(n=>n.read=true);saveDB();renderNotifications(user);}
+function openChat(email,role='candidate'){window.activeChatEmail=email;const user=db.users.find(u=>String(u.email).toLowerCase()===String(email).toLowerCase());if(!user)return;ensureUserCommunication(user);document.getElementById('chat-title').textContent=role==='admin'?'Chat with Candidate — '+(user.profile?.name||user.email):'Chat with Scanline Admin';renderChatMessages(user,role);document.getElementById('chat-modal').classList.add('show');setTimeout(()=>document.getElementById('chat-input')?.focus(),50);}
+function closeChat(){document.getElementById('chat-modal')?.classList.remove('show');window.activeChatEmail=null;}
+function renderChatMessages(user,role){const box=document.getElementById('chat-messages');if(!box)return;box.innerHTML=(user.messages||[]).map(m=>`<div class="chat-msg ${m.sender==='admin'?'admin':'user'}"><b>${m.sender==='admin'?'Admin':'You'}</b><div>${escapeHtml(m.text)}</div><small>${escapeHtml(formatTime(m.createdAt))}</small></div>`).join('')||'<div class="empty">No messages yet. Start the conversation.</div>';box.scrollTop=box.scrollHeight;}
+function sendChatMessage(){const email=window.activeChatEmail||session?.email;if(!email)return;const input=document.getElementById('chat-input');const text=String(input?.value||'').trim();if(!text)return;const user=db.users.find(u=>String(u.email).toLowerCase()===String(email).toLowerCase());if(!user)return;ensureUserCommunication(user);const sender=session?.type==='admin'?'admin':'user';const now=new Date().toISOString();user.messages.push({sender,text,createdAt:now});user.messages=user.messages.slice(-100);if(sender==='admin'){addUserNotification(user,'New message from administrator','The administrator sent you a message in the Scanline chat.',{type:'Chat',fromAdmin:true,createdAt:now});}else{addUserNotification(user,'Message sent to administrator','Your message was sent to the administrator.',{type:'Chat',fromAdmin:false,createdAt:now});addAdminNotification('New message from candidate',(user.profile?.name||user.email)+' sent a new message about their job or resume.',{type:'Chat',candidateEmail:user.email,candidateName:user.profile?.name||user.email,createdAt:now});}saveDB();input.value='';renderChatMessages(user,sender==='admin'?'admin':'candidate');updateAdminNotificationDot();}
+async function sendAutomaticReviewEmail(user,notification,activity){
+  const destination = String(user?.profile?.email || user?.email || '').trim();
+  if(!destination || !validEmail(destination))return 'failed';
+  const subject='Your resume has been reviewed by the administrator in the Resume Analyser';
+  const messageText='Hello '+(user.profile?.name||'Candidate')+',\n\nYour resume has been reviewed by the administrator in the Resume Analyser (Scanline). Log in to your account to see the full review, your job match score, and any messages from the administrator.\n\nRegards,\nScanline Admin';
+  // Preferred path: send a real email through the admin's connected Gmail account via EmailJS, automatically, only to this candidate.
+  if(emailJsReady()){
+    try{
+      await emailjs.send(emailSettings.serviceId,emailSettings.templateId,{
+        to_email:destination,
+        to_name:user.profile?.name||'Candidate',
+        from_name:NOTIFICATION_CONFIG.appName,
+        subject,
+        message:messageText,
+        app_name:NOTIFICATION_CONFIG.appName,
+        viewed_at:notification.createdAt
+      });
+      notification.emailStatus='sent';
+      notification.emailProvider='gmail';
+      saveDB();
+      return 'sent';
+    }catch(err){
+      console.warn('Automatic Gmail email failed:',err);
+      notification.emailStatus='failed';
+      notification.emailError=String(err?.text||err?.message||'Unknown error');
+      saveDB();
+      return 'failed';
+    }
+  }
+  // Optional fallback: a custom backend endpoint, if one has been configured for this deployment.
+  if(NOTIFICATION_CONFIG.emailEndpoint){
+    const payload={event:'profile_viewed',subject,to:user.email,userId:user.id||user.email,userName:user.profile?.name||'Candidate',viewedAt:notification.createdAt,message:messageText,notificationId:notification.id,activity};
+    try{
+      const response=await fetch(NOTIFICATION_CONFIG.emailEndpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      if(!response.ok)throw new Error('Email service returned '+response.status);
+      notification.emailStatus='sent';
+      saveDB();
+      return 'sent';
+    }catch(err){
+      console.warn('Automatic email failed:',err);
+      notification.emailStatus='failed';
+      saveDB();
+      return 'failed';
+    }
+  }
+  // No automatic email path configured — the candidate still gets the in-app notification,
+  // and the admin can send a real Gmail email in one click via the "Notify via Gmail" button.
+  notification.emailStatus='not-configured';
+  saveDB();
+  return 'not-configured';
+}
+function emailCandidate(user){
+  if(!user?.email)return;
+  const subject='Your resume has been reviewed by the administrator in the Resume Analyser';
+  const body=`Hello ${user.profile?.name||'Candidate'},\n\nYour resume has been reviewed by the administrator in the Resume Analyser (Scanline). Log in to your account to see the full review, your job match score, and any messages from the administrator.\n\nRegards,\nScanline Admin`;
+  window.open(gmailComposeUrl(user,subject,body),'_blank','noopener');
+}
+function notifyCandidateViaGmail(email){
+  if(!session||session.type!=='admin')return;
+  const user=db.users.find(u=>String(u.email||'').toLowerCase()===String(email||'').toLowerCase());
+  if(!user){showToast('Not found','Could not find that candidate.');return;}
+  emailCandidate(user);
+  const reviewNotification=(user.notifications||[]).find(x=>x.type==='Admin Review');
+  if(reviewNotification){reviewNotification.emailStatus='sent';reviewNotification.emailProvider='gmail-manual';saveDB();}
+  renderAdminNotifications();
+  adminViewUser(user.email);
+  showToast('Gmail opened','A pre-filled Gmail message to '+user.email+' is ready — click Send in the new tab to notify them.');
+}
+function profileViewKey(user,adminEmail){return String(adminEmail||'').toLowerCase()+'|'+String(user.email||'').toLowerCase()+'|'+String(user.resumeVersion||user.updatedAt||user.fileName||'current');}
+function autoReviewNotification(user,adminEmail){ensureUserCommunication(user);const key=profileViewKey(user,adminEmail);if(session?.type==='admin'&&session.lastViewedKey===key)return false;if(session?.type==='admin')session.lastViewedKey=key;const viewedAt=new Date().toISOString();const activity={id:'act_'+Date.now()+'_'+Math.random().toString(36).slice(2),userId:user.id||user.email,userName:user.profile?.name||user.email,userEmail:user.email,adminId:adminEmail,adminEmail,accessedAt:viewedAt,profileViewed:true,resumeViewed:Boolean(user.resumeText||user.fileName),action:'Admin opened overall resume analysis/profile'};db.adminActivity.unshift(activity);db.adminActivity=db.adminActivity.slice(0,500);const notification=addUserNotification(user,'Resume Reviewed','Your resume has been reviewed by the administrator in the Resume Analyser.',{type:'Admin Review',fromAdmin:true,createdAt:viewedAt});updateNotificationDot(user);Promise.allSettled([sendAutomaticReviewEmail(user,notification,activity),sendAutomaticReviewSMS(user,notification,activity)]).then(()=>{saveDB();if(session?.type==='admin'&&String(session.email||'').length&&document.getElementById('admin-content')?.dataset.candidateEmail===String(user.email||'').toLowerCase())adminViewUser(user.email);});if(scanlineChannel){try{scanlineChannel.postMessage({type:'profile_viewed',email:user.email,notificationId:notification.id});}catch(e){}}saveDB();return true;}
+initEmailJS();
+const scanlineChannel='BroadcastChannel' in window?new BroadcastChannel('scanline_notifications'):null;
+if(scanlineChannel){scanlineChannel.onmessage=function(e){if(!session||session.type!=='user'||e.data?.type!=='profile_viewed')return;if(String(e.data.email).toLowerCase()!==String(session.email).toLowerCase())return;const user=db.users.find(u=>String(u.email).toLowerCase()===String(session.email).toLowerCase());if(user){ensureUserCommunication(user);updateNotificationDot(user);showToast('Resume Reviewed','Your resume has been reviewed by the administrator in the Resume Analyser.');}};}
+window.addEventListener('storage',function(e){if(e.key!==STORAGE_KEY||!session)return;try{const fresh=JSON.parse(e.newValue||'null');if(!fresh)return;db.users=Array.isArray(fresh.users)?fresh.users:db.users;db.admins=Array.isArray(fresh.admins)?fresh.admins:db.admins;db.adminActivity=Array.isArray(fresh.adminActivity)?fresh.adminActivity:db.adminActivity;db.adminNotifications=Array.isArray(fresh.adminNotifications)?fresh.adminNotifications:db.adminNotifications;if(session.type==='user'){const user=db.users.find(u=>String(u.email).toLowerCase()===String(session.email).toLowerCase());if(user){updateNotificationDot(user);if(document.getElementById('notification-modal')?.classList.contains('show'))renderNotifications(user);}}}catch(err){console.warn(err);}});
+setInterval(()=>{if(!session||session.type!=='user')return;try{const fresh=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');if(!fresh)return;const current=db.users.find(u=>String(u.email).toLowerCase()===String(session.email).toLowerCase());const oldTop=current?.notifications?.[0]?.id;const freshUser=(fresh.users||[]).find(u=>String(u.email).toLowerCase()===String(session.email).toLowerCase());if(freshUser){db.users=fresh.users;db.admins=fresh.admins||db.admins;db.adminActivity=fresh.adminActivity||db.adminActivity;db.adminNotifications=fresh.adminNotifications||db.adminNotifications;const user=db.users.find(u=>String(u.email).toLowerCase()===String(session.email).toLowerCase());if(user){updateNotificationDot(user);if(user.notifications?.[0]?.id!==oldTop&&user.notifications?.[0]&&!user.notifications[0].read)showToast('New notification',user.notifications[0].message);}}}catch(e){}},2000);
+
+function validEmail(email){
+  return /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email);
+}
+
+function validPhone(phone){
+  const normalized = (phone || '').replace(/[\s().-]/g,'');
+  return /^\+?[1-9]\d{7,14}$/.test(normalized);
+}
+function normalizePhone(phone){
+  return String(phone||'').replace(/[\s().-]/g,'').replace(/^00/,'+');
+}
+
+function makeCaptcha(id){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for(let i=0;i<6;i++){
+    code += chars[Math.floor(Math.random()*chars.length)];
+  }
+  const state = {question:code, answer:code};
+  window[id+'Captcha'] = state;
+  const q = document.getElementById(id+'-captcha-question');
+  if(q){
+    q.textContent = code;
+    q.style.letterSpacing = '4px';
+  }
+  const input = document.getElementById(id+'-captcha');
+  if(input) input.value='';
+}
+
+function validCaptcha(id){
+  const state = window[id+'Captcha'];
+  const value = (document.getElementById(id+'-captcha')?.value || '').trim();
+  return !!state && value === state.answer;
+}
+
+function clearLoginFields(){
+  ['u-email','u-password','u-phone','u-captcha','a-name','a-email','a-password','a-phone','a-captcha'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['u-remember','a-remember'].forEach(id=>{const el=document.getElementById(id);if(el)el.checked=false;});
+}
+
+function rememberedIds(){
+  clearLoginFields();
+}
+
+
+let session = null;
+
+let authTab = {
+  user:'login',
+  admin:'login'
+};
+
+let dashTab = 'bio';
+
+let charts = [];
+
+
+/* ================= SKILLS ================= */
+
+const SKILL_BANK = [
+
+/* Core programming */
+'JavaScript','TypeScript','Python','Java','C','C++','C#','Go','Rust','PHP','Ruby','Kotlin','Swift',
+
+/* Web / frontend */
+'HTML/CSS','React','Angular','Vue.js','Next.js','Node.js','Express','Redux','Bootstrap','Tailwind CSS','jQuery','Frontend','Backend','Full Stack','UI/UX','Responsive Design',
+
+/* Backend / APIs / databases */
+'SQL','MySQL','PostgreSQL','MongoDB','Oracle','Redis','GraphQL','REST API','API','Flask','Django','FastAPI','Spring Boot','Microservices',
+
+/* Cloud / DevOps */
+'AWS','Azure','Google Cloud','Docker','Kubernetes','Jenkins','GitHub Actions','GitLab CI/CD','CI/CD','Terraform','Ansible','Linux','Bash','Shell Scripting','Cloud Computing','Infrastructure as Code','Automation',
+
+/* Data / AI */
+'Machine Learning','Deep Learning','Artificial Intelligence','Data Science','Data Analysis','Pandas','NumPy','TensorFlow','PyTorch','Power BI','Tableau','Excel','Statistics',
+
+/* Testing / engineering */
+'Git','GitHub','GitLab','Testing','Unit Testing','Integration Testing','Selenium','Cypress','Jest','Postman','Software Development','Object-Oriented Programming','Data Structures','Algorithms','System Design','Agile','Scrum',
+
+/* Design / professional skills */
+'Figma','Communication','Leadership','Teamwork','Problem Solving','Critical Thinking','Time Management','Project Management','Documentation'
+
+];
+
+const SOFT_SKILLS = [
+
+'Communication',
+'Leadership',
+'Teamwork',
+'Problem Solving',
+'Agile'
+
+];
+
+
+/* ================= PAGE NAVIGATION ================= */
+
+function syncPersonalDetailsUI(id){
+  const notify=document.getElementById('notify-btn');
+  if(notify) notify.style.display=(id==='page-user-dash' && dashTab==='personal')?'none':'';
+}
+
+function showPage(id){
+
+  document.querySelectorAll('.page')
+  .forEach(function(page){
+
+    page.classList.remove('active');
+
+  });
+
+  const selectedPage =
+  document.getElementById(id);
+
+  if(selectedPage){
+
+    selectedPage.classList.add('active');
+
+  }
+  syncPersonalDetailsUI(id);
+
+}
+
+
+/* ================= BUTTON FIX ================= */
+
+document.addEventListener(
+"DOMContentLoaded",
+function(){
+
+  const candidateButton =
+  document.getElementById("candidateBtn");
+
+  const adminButton =
+  document.getElementById("adminBtn");
+
+
+  if(candidateButton){
+    candidateButton.addEventListener('click', function(){
+      showPage('page-user-auth');
+      setAuthTab('user','login');
+    });
+  }
+
+  if(adminButton){
+    adminButton.addEventListener('click', function(){
+      showPage('page-admin-auth');
+      clearLoginFields();
+      setAuthTab('admin','login');
+    });
+  }
+
+  populateJobRoles();
+  clearLoginFields();
+  try{
+    const pendingText=sessionStorage.getItem('scanline_pending_resume_text');
+    const pendingName=sessionStorage.getItem('scanline_pending_resume_name');
+    if(pendingText && document.getElementById('resumeText')){
+      document.getElementById('resumeText').value=pendingText;
+      if(pendingName) document.getElementById('filename').textContent=pendingName+' — text loaded automatically';
+    }
+  }catch(e){}
+  
+  
+
+});
+
+
+/* ================= AUTH TABS ================= */
+
+function setAuthTab(kind,tab){
+  const isUser=kind==='user';
+  if(!['login','signup'].includes(tab))tab='login';
+  authTab[kind]=tab;
+  const loginTab=document.getElementById(isUser?'ut-login':'at-login');
+  const signupTab=document.getElementById(isUser?'ut-signup':'at-signup');
+  if(loginTab)loginTab.classList.toggle('active',tab==='login');
+  if(signupTab)signupTab.classList.toggle('active',tab==='signup');
+  const signupFields=document.getElementById(isUser?'user-signup-fields':'admin-signup-fields');
+  if(signupFields)signupFields.style.display=tab==='signup'?'block':'none';
+  const title=document.getElementById(isUser?'user-auth-title':'admin-auth-title');
+  if(title)title.textContent=(isUser?'Candidate ':'Admin ')+(tab==='login'?'login':'sign up');
+  clearLoginFields();makeCaptcha(isUser?'u':'a');
+  const submit=document.getElementById(isUser?'user-auth-submit':'admin-auth-submit');
+  if(submit)submit.textContent=tab==='login'?'Log in':'Create account';
+}
+
+/* ================= USER LOGIN ================= */
+
+function submitUserAuth(){
+  const loginValue = val('u-email');
+  const password = val('u-password');
+  const phone = val('u-phone');
+  const msg = document.getElementById('user-auth-msg');
+
+  if(authTab.user === 'signup'){
+    if(!validEmail(loginValue)) return setMsg(msg,'Enter your professional email address, for example name@company.com.',true);
+    if(password.length < 6) return setMsg(msg,'Password must contain at least 6 characters.',true);
+    if(phone && !validPhone(phone)) return setMsg(msg,'Enter a valid phone number with 8–15 digits, or leave it blank.',true);
+    if(!validCaptcha('u')) return setMsg(msg,'Incorrect CAPTCHA. A new CAPTCHA has been generated.',true);
+
+    if(db.users.find(u => String(u.email||'').toLowerCase() === loginValue.toLowerCase()))
+      return setMsg(msg,'An account with this email already exists. Switch to Log in — you do not need to sign up again.',true);
+
+    if(phone && db.users.find(u => validPhone(u.phone||'') && normalizePhone(u.phone) === normalizePhone(phone)))
+      return setMsg(msg,'An account with this phone number already exists. Switch to Log in — you do not need to sign up again.',true);
+
+    const newUser={
+      id:'usr_'+Date.now()+'_'+Math.random().toString(36).slice(2),
+      email:loginValue,
+      password,
+      phone:phone||'',
+      resumeText:'',
+      jobDesc:'',
+      fileName:'',
+      skills:null,
+      jobMatch:0,
+      matchDetails:null,
+      overallReview:null,
+      notifications:[],
+      messages:[],
+      profile:{name:'',email:loginValue,phone:phone||'',location:'',linkedin:'',github:'',portfolio:'',otherProfiles:[],summary:''}
+    };
+    db.users.push(newUser);
+    saveDB();
+    setMsg(msg,'Account created and saved. You only need to sign up once. Use your email or registered phone with the same password to log in later.',false);
+    clearLoginFields();
+    setAuthTab('user','login');
+  } else {
+    if(!loginValue) return setMsg(msg,'Enter your email address or registered phone number.',true);
+    if(password.length < 6) return setMsg(msg,'Password must contain at least 6 characters.',true);
+    if(!validCaptcha('u')) return setMsg(msg,'Incorrect CAPTCHA. A new CAPTCHA has been generated.',true);
+
+    const normalizedLogin = loginValue.toLowerCase();
+    const normalizedPhone = normalizePhone(loginValue);
+    const user = db.users.find(u =>
+      String(u.password||'') === password &&
+      (
+        String(u.email||'').toLowerCase() === normalizedLogin ||
+        (normalizedPhone && normalizePhone(u.phone||'') === normalizedPhone)
+      )
+    );
+    if(!user) return setMsg(msg,'Invalid email/phone or password.',true);
+
+    ensureUserCommunication(user);
+    saveDB();
+    session={type:'user',email:user.email};
+    goAfterUserLogin(user);
+    updateNotificationDot(user);
+    if(unreadCount(user)>0) showToast('New admin notification','The administrator has reviewed your resume. Open Notifications to read the update.');
+  }
+}
+
+/* ================= ADMIN LOGIN ================= */
+
+function submitAdminAuth(){
+  const email=val('a-email'),password=val('a-password');
+  const name=val('a-name'),phone=val('a-phone');
+  const msg=document.getElementById('admin-auth-msg');
+
+  if(!validEmail(email))return setMsg(msg,'Enter a valid admin email address.',true);
+  if(password.length < 6)return setMsg(msg,'Password must contain at least 6 characters.',true);
+  if(!validCaptcha('a'))return setMsg(msg,'Incorrect CAPTCHA. A new CAPTCHA has been generated.',true);
+
+  /* Admin sign-up follows the same flow as candidate sign-up. */
+  if(authTab.admin === 'signup'){
+    if(!name)return setMsg(msg,'Enter the administrator name.',true);
+    if(phone && !validPhone(phone))return setMsg(msg,'Enter a valid phone number with 8–15 digits, or leave it blank.',true);
+
+    const existing=db.admins.find(a=>String(a.email||'').trim().toLowerCase()===email.toLowerCase());
+    if(existing)return setMsg(msg,'An admin account with this email already exists. Switch to Log in.',true);
+    const admin={
+      id:'ADM-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,7).toUpperCase(),
+      name,
+      email,
+      password,
+      phone:phone||'',
+      createdAt:new Date().toISOString()
+    };
+    db.admins.push(admin);
+    saveDB();
+    setAuthTab('admin','login');
+    setMsg(msg,'Admin account created successfully. Use the same email and password to log in.',false);
+    return;
+  }
+
+  const admin=authorizedAdmins().find(a=>String(a.email||'').trim().toLowerCase()===email.toLowerCase()&&String(a.password||'')===password);
+  if(!admin)return setMsg(msg,'Invalid admin email or password. If this is your first admin account, use Sign up first. The CAPTCHA is still required.',true);
+
+  session={type:'admin',email:admin.email,adminId:admin.id||admin.email,lastViewedKey:null};
+  renderAdminTable();
+  updateAdminNotificationDot();
+  showPage('page-admin-dash');
+}
+
+/* ================= LOGIN CHECK ================= */
+
+function goAfterUserLogin(user){
+
+  // Existing accounts keep their saved resume, skills and match results.
+  // Returning users should go directly to their Overall Results instead of
+  // being forced through the upload flow again.
+  ensureUserCommunication(user);
+
+  const hasSavedAnalysis =
+    (Array.isArray(user.skills) && user.skills.length > 0) ||
+    (String(user.resumeText || '').trim().length >= 20 &&
+      (user.matchDetails || Number(user.jobMatch || 0) > 0));
+
+  if(hasSavedAnalysis){
+    // Older saved accounts may contain resumeText but not the newer skills array.
+    // Rebuild the missing analysis once, using the user's previously saved job description.
+    if((!Array.isArray(user.skills) || !user.skills.length) && String(user.resumeText || '').trim().length >= 20){
+      try{
+        user.skills = computeSkills(user.resumeText);
+        if(!user.matchDetails && user.jobDesc){
+          const savedRoleId = user.matchDetails?.roleId || user.jobRole || '';
+          user.matchDetails = computeMatchDetails(user.skills, user.jobDesc, savedRoleId);
+          user.jobMatch = user.matchDetails.overall;
+        }
+        if(user.matchDetails){
+          user.overallReview={
+            savedAt:user.overallReview?.savedAt||new Date().toISOString(),
+            candidateName:user.profile?.name||'',candidateEmail:user.email,
+            roleId:user.matchDetails.roleId||user.jobRole||'',roleTitle:user.matchDetails.roleTitle||'',
+            overall:Number(user.jobMatch||0),skillMatch:Number(user.matchDetails.skillMatch||0),
+            experienceMatch:Number(user.matchDetails.experienceMatch||0),jobRelevance:Number(user.matchDetails.jobRelevance||0),
+            years:Number(user.matchDetails.years||0),minYears:Number(user.matchDetails.minYears||0),maxYears:Number(user.matchDetails.maxYears||0),
+            matchedSkills:[...(user.matchDetails.matchedSkills||[])],missingSkills:[...(user.matchDetails.missingSkills||[])],
+            detectedSkills:[...(user.skills||[])].map(s=>({skill:s.skill,score:Number(s.score||0)})),
+            resumeSummary:user.profile?.summary||'',resumeText:user.resumeText,jobDesc:user.jobDesc
+          };
+        }
+        saveDB();
+      }catch(e){
+        console.warn('Could not rebuild saved resume analysis:', e);
+      }
+    }
+
+    renderDashboard(user);
+    showPage('page-dashboard');
+    updateNotificationDot(user);
+    return;
+  }
+
+  // Brand-new accounts have no resume analysis yet, so take them to upload.
+  showPage('page-upload');
+
+}
+
+
+function val(id){
+  const el = document.getElementById(id);
+  return el ? String(el.value || '').trim() : '';
+}
+
+
+function setMsg(
+element,
+text,
+isError
+){
+
+  element.textContent = text;
+
+  element.className =
+  'msg ' +
+  (
+    isError ?
+    'err' :
+    'ok'
+  );
+
+}
+
+
+function logout(){
+
+  saveDB();
+  session = null;
+
+  charts.forEach(
+    c => c.destroy()
+  );
+
+  charts = [];
+
+  showPage(
+    'page-landing'
+  );
+
+}
+
+
+/* ================= FILE ================= */
+
+async function handleFile(event){
+  const file = event.target.files[0];
+  if(!file) return;
+
+  const nameEl = document.getElementById('filename');
+  const textEl = document.getElementById('resumeText');
+  const msg = document.getElementById('upload-msg');
+
+  nameEl.textContent = file.name;
+  textEl.value = '';
+  if(msg) setMsg(msg,'Reading resume file automatically…',false);
+
+  try{
+    const lower = file.name.toLowerCase();
+    let text = '';
+
+    if(file.type === 'text/plain' || lower.endsWith('.txt')){
+      text = await file.text();
+
+    }else if(file.type === 'application/pdf' || lower.endsWith('.pdf')){
+      // PDF.js is loaded as an ES module above. Reuse its global if available,
+      // otherwise import the module directly.
+      let pdfjs = window.pdfjsLib;
+      if(!pdfjs){
+        pdfjs = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs');
+      }
+      if(pdfjs.GlobalWorkerOptions){
+        pdfjs.GlobalWorkerOptions.workerSrc =
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs';
+      }
+      const buffer = await file.arrayBuffer();
+      const pdf = await pdfjs.getDocument({data:buffer}).promise;
+      const pages = [];
+      for(let i=1;i<=pdf.numPages;i++){
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        pages.push(content.items.map(item => item.str || '').join(' '));
+      }
+      text = pages.join('\\n\\n');
+
+    }else if(lower.endsWith('.docx') ||
+             file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'){
+      if(!window.mammoth){
+        throw new Error('DOCX reader did not load. Check your internet connection.');
+      }
+      const buffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({arrayBuffer:buffer});
+      text = result.value || '';
+
+    }else{
+      throw new Error('Unsupported file type. Please use TXT, PDF or DOCX.');
+    }
+
+    text = String(text || '').replace(/\\u0000/g,'').trim();
+
+    if(text.length < 20){
+      nameEl.textContent = file.name + ' — no readable text found';
+      if(msg) setMsg(msg,'The file was selected, but no readable resume text was found. If it is a scanned/image-only PDF, paste the text manually.',true);
+      return;
+    }
+
+    textEl.value = text;
+    nameEl.textContent = file.name + ' — text loaded automatically';
+
+    // Immediately show the contact details found inside the uploaded resume.
+    const extracted = extractResumeProfile(text);
+    const contact = [
+      extracted.email ? 'Email: '+extracted.email : '',
+      extracted.phone ? 'Phone: '+extracted.phone : '',
+      extracted.name ? 'Name: '+extracted.name : ''
+    ].filter(Boolean).join(' · ');
+
+    if(msg){
+      setMsg(msg,contact ? 'Resume text loaded automatically. '+contact : 'Resume text loaded automatically.',false);
+    }
+
+    // Keep the upload ready even if the user switches pages and returns.
+    try{
+      sessionStorage.setItem('scanline_pending_resume_text',text);
+      sessionStorage.setItem('scanline_pending_resume_name',file.name);
+    }catch(e){}
+
+  }catch(err){
+    console.error('Resume file read failed:',err);
+    nameEl.textContent = file.name + ' — read failed';
+    if(msg) setMsg(msg,'Could not read this resume automatically: '+(err?.message||'Unknown error')+'. You can still paste the resume text below.',true);
+  }
+}
+
+/* ================= RESUME PROFILE EXTRACTION ================= */
+
+function extractResumeProfile(text){
+  const source = text || '';
+  const lines = source.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+
+  const findFirst = (patterns) => {
+    for(const pattern of patterns){
+      const m = source.match(pattern);
+      if(m && m[1]) return m[1].trim().replace(/[),.;]+$/,'');
+    }
+    return '';
+  };
+
+  const urls = [...source.matchAll(/(?:https?:\/\/|www\.)[^\s<>"']+/gi)]
+    .map(m => m[0].replace(/[),.;]+$/,''));
+
+  const linkedin = urls.find(u => /linkedin\.com/i.test(u)) ||
+    findFirst([/(?:linkedin\s*(?:profile|url)?\s*[:\-]?\s*)(https?:\/\/[^\s]+)/i]);
+  const github = urls.find(u => /github\.com/i.test(u)) ||
+    findFirst([/(?:github\s*(?:profile|url)?\s*[:\-]?\s*)(https?:\/\/[^\s]+)/i]);
+  const portfolio = urls.find(u => !/(linkedin|github|mailto:)/i.test(u)) ||
+    findFirst([/(?:portfolio|personal\s*(?:website|site))\s*[:\-]?\s*(https?:\/\/[^\s]+)/i]);
+
+  const email = findFirst([/\b([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b/i]);
+  const phone = findFirst([/(?:phone|mobile|contact|tel)\s*[:\-]?\s*(\+?[0-9][0-9\s().-]{7,}[0-9])/i]);
+  const location = findFirst([/(?:location|address|based in|city)\s*[:\-]?\s*([^\n]+)/i]);
+
+  let name = findFirst([/(?:name|full name)\s*[:\-]\s*([^\n]+)/i]);
+  if(!name){
+    const candidate = lines.slice(0,5).find(line =>
+      /^[A-Za-z][A-Za-z .'-]{2,50}$/.test(line) &&
+      !/resume|curriculum|vitae|profile|email|phone|linkedin|github/i.test(line)
+    );
+    name = candidate || '';
+  }
+
+  const otherProfiles = urls.filter(u =>
+    !/(linkedin\.com|github\.com)/i.test(u) && u !== portfolio
+  );
+
+  const summary = findFirst([/(?:summary|professional summary|profile)\s*[:\-]?\s*\n?([^\n]{30,300})/i]);
+
+  return {
+    name,
+    email,
+    phone,
+    location,
+    linkedin,
+    github,
+    portfolio,
+    otherProfiles,
+    summary
+  };
+}
+
+function profileLink(url){
+  if(!url) return '';
+  const href = /^https?:\/\//i.test(url) ? url : 'https://' + url;
+  return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`;
+}
+
+/* ================= ANALYSE ================= */
+
+function analyzeResume(){
+
+  const resumeText =
+  val('resumeText');
+
+  let jobDesc = val('jobDesc');
+  const roleId = val('jobRole');
+
+  if(!jobDesc && roleId){
+    const role = JOB_ROLES.find(r => r.id === roleId);
+    if(role) jobDesc = role.description;
+  }
+
+
+  const errEl =
+  document.getElementById(
+    'upload-msg'
+  );
+
+
+  if(
+    resumeText.length < 20
+  ){
+
+    return setMsg(
+      errEl,
+      'Paste at least a short resume.',
+      true
+    );
+
+  }
+
+  if(!jobDesc){
+    return setMsg(
+      errEl,
+      'Select a software job or paste a job description to calculate the match score.',
+      true
+    );
+  }
+
+
+  const user =
+  db.users.find(
+
+    x =>
+    x.email === session.email
+
+  );
+
+
+  user.resumeText =
+  resumeText;
+  try{
+    sessionStorage.setItem('scanline_pending_resume_text',resumeText);
+    sessionStorage.setItem('scanline_pending_resume_name',document.getElementById('filename')?.textContent||'pasted-text');
+  }catch(e){}
+
+  user.jobDesc =
+  jobDesc;
+
+  const extractedResumeProfile = extractResumeProfile(resumeText);
+  user.profile = {
+    ...(user.profile || {}),
+    ...extractedResumeProfile
+  };
+  // Keep the original login credentials unchanged. Use the resume's contact
+  // details for communication when they are present.
+  if(extractedResumeProfile.phone){
+    user.profile.phone=extractedResumeProfile.phone;
+  }
+
+
+  user.fileName =
+  document
+  .getElementById('filename')
+  .textContent
+  ||
+  'pasted-text';
+
+
+  user.skills =
+  computeSkills(
+    resumeText
+  );
+
+  user.profile = {
+    ...(user.profile || {}),
+    ...extractResumeProfile(resumeText),
+    email: user.email,
+    phone: user.phone
+  };
+
+  currentResumeTextForMatch = resumeText;
+
+  user.matchDetails =
+  computeMatchDetails(
+    user.skills,
+    jobDesc,
+    roleId
+  );
+
+  user.jobMatch =
+  user.matchDetails.overall;
+
+  /* Persist a complete point-in-time overall review so returning users and
+     administrators see the same saved analysis after login. */
+  user.overallReview = {
+    savedAt:new Date().toISOString(),
+    candidateName:user.profile?.name||'',
+    candidateEmail:user.email,
+    roleId,
+    roleTitle:user.matchDetails?.roleTitle||'',
+    overall:Number(user.jobMatch||0),
+    skillMatch:Number(user.matchDetails?.skillMatch||0),
+    experienceMatch:Number(user.matchDetails?.experienceMatch||0),
+    jobRelevance:Number(user.matchDetails?.jobRelevance||0),
+    years:Number(user.matchDetails?.years||0),
+    minYears:Number(user.matchDetails?.minYears||0),
+    maxYears:Number(user.matchDetails?.maxYears||0),
+    matchedSkills:[...(user.matchDetails?.matchedSkills||[])],
+    missingSkills:[...(user.matchDetails?.missingSkills||[])],
+    detectedSkills:[...(user.skills||[])].map(s=>({skill:s.skill,score:Number(s.score||0)})),
+    resumeSummary:user.profile?.summary||'',
+    resumeText:user.resumeText,
+    jobDesc:user.jobDesc
+  };
+
+  saveDB();
+
+  renderDashboard(user);
+
+  showPage(
+    'page-dashboard'
+  );
+
+}
+
+
+/* ================= SKILL DETECTION ================= */
+
+function computeSkills(text){
+  const lower=String(text||'').toLowerCase();
+  const found=[];
+  // One regex pass per skill; the bank is small and patterns are pre-escaped.
+  for(let i=0;i<SKILL_BANK.length;i++){
+    const skill=SKILL_BANK[i];
+    const escaped=skill.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const hits=(lower.match(new RegExp('\\b'+escaped+'\\b','gi'))||[]).length;
+    if(hits) found.push({skill,hits});
+  }
+  if(found.length<6){
+    for(let i=0;i<SKILL_BANK.length && found.length<8;i++){
+      const skill=SKILL_BANK[i];
+      if(!found.some(f=>f.skill===skill))found.push({skill,hits:1});
+    }
+  }
+  return found
+    .map(f=>({skill:f.skill,score:Math.min(100,40+f.hits*22)}))
+    .sort((a,b)=>b.score-a.score);
+}
+
+const JOB_ROLES = [
+  {
+    id:'software-engineer',
+    title:'Software Engineer',
+    keywords:['javascript','python','java','go','sql','git','api','testing','software development'],
+    requiredSkills:['JavaScript','Python','Java','SQL','Git'],
+    minYears:2,
+    maxYears:5,
+    description:'Software Engineer responsible for designing, developing, testing and maintaining reliable software applications and APIs. Common skills include programming, Git, SQL, APIs and software development practices.'
+  },
+  {
+    id:'full-stack-developer',
+    title:'Full Stack Developer',
+    keywords:['javascript','react','node.js','python','flask','express','graphql','html/css','sql','git','api','frontend','backend'],
+    requiredSkills:['JavaScript','React','Node.js','Python','SQL','Git','HTML/CSS'],
+    minYears:2,
+    maxYears:5,
+    description:'Full Stack Developer building frontend and backend applications. Experience with JavaScript, React, backend APIs, databases, Git and modern web development is expected.'
+  },
+  {
+    id:'devops-engineer',
+    title:'DevOps Engineer',
+    keywords:['docker','kubernetes','jenkins','ansible','aws','azure','terraform','ci/cd','linux','bash','automation','microservices','python','git'],
+    requiredSkills:['Docker','Kubernetes','AWS','Python','Git'],
+    minYears:2,
+    maxYears:5,
+    description:'DevOps Engineer focused on CI/CD, automation, containerization, cloud infrastructure and reliable deployments. Typical tools include Docker, Kubernetes, Jenkins, Ansible, Terraform, AWS or Azure, Bash and Python.'
+  },
+  {
+    id:'frontend-developer',
+    title:'Frontend Developer',
+    keywords:['javascript','react','typescript','html/css','bootstrap','tailwind','git','ui','frontend'],
+    requiredSkills:['JavaScript','React','HTML/CSS','Git','TypeScript'],
+    minYears:1,
+    maxYears:5,
+    description:'Frontend Developer building responsive web interfaces with JavaScript, React, HTML/CSS, Git and modern UI frameworks.'
+  },
+  {
+    id:'backend-developer',
+    title:'Backend Developer',
+    keywords:['python','flask','express','node.js','graphql','sql','api','git','backend','microservices'],
+    requiredSkills:['Python','SQL','Git','Node.js'],
+    minYears:2,
+    maxYears:5,
+    description:'Backend Developer building APIs and services using Python, Node.js, SQL, Git and backend architecture patterns.'
+  },
+  {
+    id:'python-developer',
+    title:'Python Developer',
+    keywords:['python','flask','django','fastapi','sql','api','git','automation','testing'],
+    requiredSkills:['Python','SQL','Git'],
+    minYears:1,
+    maxYears:5,
+    description:'Python Developer building applications, APIs and automation using Python, databases, Git and web frameworks such as Flask, Django or FastAPI.'
+  },
+  {
+    id:'cloud-engineer',
+    title:'Cloud Engineer',
+    keywords:['aws','azure','kubernetes','docker','terraform','ansible','linux','bash','automation','cloud'],
+    requiredSkills:['AWS','Docker','Kubernetes','Git'],
+    minYears:2,
+    maxYears:6,
+    description:'Cloud Engineer managing cloud infrastructure, automation, containers and deployment platforms using AWS or Azure, Docker, Kubernetes and infrastructure-as-code.'
+  },
+  {
+    id:'react-developer',
+    title:'React Developer',
+    keywords:['react','javascript','typescript','html/css','redux','git','frontend','api'],
+    requiredSkills:['React','JavaScript','HTML/CSS','Git'],
+    minYears:1,
+    maxYears:5,
+    description:'React Developer creating modern web interfaces with React, JavaScript or TypeScript, HTML/CSS, APIs and Git.'
+  },
+  {
+    id:'qa-automation-engineer',
+    title:'QA Automation Engineer',
+    keywords:['python','javascript','testing','automation','selenium','api','git','ci/cd','jenkins'],
+    requiredSkills:['Python','JavaScript','Git'],
+    minYears:1,
+    maxYears:5,
+    description:'QA Automation Engineer building automated tests and quality pipelines using programming, API testing, Git, CI/CD and automation tools.'
+  }
+];
+
+function populateJobRoles(filterText=''){
+  const select = document.getElementById('jobRole');
+  if(!select) return;
+  const current = select.value;
+  const q = filterText.toLowerCase().trim();
+
+  select.innerHTML = '<option value="">Select a software job...</option>';
+
+  JOB_ROLES
+    .filter(role => !q || role.title.toLowerCase().includes(q) || role.keywords.some(k => k.includes(q)))
+    .forEach(role => {
+      const option = document.createElement('option');
+      option.value = role.id;
+      option.textContent = role.title;
+      select.appendChild(option);
+    });
+
+  if([...select.options].some(o => o.value === current)){
+    select.value = current;
+  }
+}
+
+function filterJobRoles(){
+  populateJobRoles(val('jobSearch'));
+}
+
+function selectJobRole(){
+  const role = JOB_ROLES.find(r => r.id === val('jobRole'));
+  const desc = document.getElementById('jobDesc');
+  if(role && desc){
+    desc.value = role.description;
+  }
+}
+
+function getExperienceYears(text){
+  const matches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)/gi)]
+    .map(m => Number(m[1]))
+    .filter(n => Number.isFinite(n));
+
+  if(matches.length) return Math.max(...matches);
+
+  // Fall back to date ranges such as 2020-2022 / 2022-Present.
+  const ranges = [...text.matchAll(/(20\d{2})\s*[–-]\s*(20\d{2}|present)/gi)];
+  if(ranges.length){
+    let total = 0;
+    const currentYear = new Date().getFullYear();
+    ranges.forEach(r => {
+      const from = Number(r[1]);
+      const to = r[2].toLowerCase() === 'present' ? currentYear : Number(r[2]);
+      if(to >= from) total += to - from;
+    });
+    return total;
+  }
+  return 0;
+}
+
+function scoreExperience(years, minYears, maxYears){
+  if(!years) return 45;
+  if(years >= minYears && years <= maxYears) return 100;
+  if(years < minYears){
+    return Math.max(55, Math.round(100 - (minYears - years) * 20));
+  }
+  return Math.max(80, Math.round(100 - (years - maxYears) * 10));
+}
+
+function getSkillImprovementDetails(skill, roleTitle=''){
+  const guides = {
+    'HTML/CSS':'Build responsive pages using semantic HTML, Flexbox/Grid, accessibility and modern CSS.',
+    'Git':'Practice branching, commits, merge/rebase workflows, pull requests and conflict resolution.',
+    'TypeScript':'Learn static typing, interfaces, generics, unions and TypeScript with React.',
+    'JavaScript':'Strengthen ES6+, async/await, DOM APIs, modules and error handling.',
+    'React':'Practice components, props/state, hooks, routing, forms and API integration.',
+    'Node.js':'Build REST APIs, middleware, authentication and asynchronous services with Node.js.',
+    'SQL':'Practice joins, subqueries, indexes, constraints, transactions and query optimization.',
+    'Python':'Build small applications and APIs while practicing functions, OOP, testing and packages.',
+    'AWS':'Practice core AWS services, IAM, networking, storage, compute and deployment.',
+    'Docker':'Containerize an application, write Dockerfiles and work with images, volumes and networks.',
+    'Kubernetes':'Learn pods, deployments, services, config maps, secrets and basic cluster operations.',
+    'Testing':'Add unit, integration and end-to-end tests to a real project and learn test design.',
+    'REST API':'Design REST endpoints, validation, authentication, status codes and API documentation.',
+    'API':'Practice consuming and building APIs, authentication, validation and error handling.',
+    'Bootstrap':'Build responsive layouts with Bootstrap grid, components and utility classes.',
+    'Tailwind CSS':'Practice utility-first responsive layouts, reusable components and design consistency.',
+    'UI/UX':'Improve wireframing, usability, accessibility and user-flow design.',
+    'Responsive Design':'Build layouts that work across mobile, tablet and desktop breakpoints.',
+    'Redux':'Practice centralized state, slices, actions/selectors and async state management.',
+    'Next.js':'Learn routing, server/client components, data fetching and deployment.',
+    'Angular':'Practice components, services, routing, forms and dependency injection.',
+    'Vue.js':'Practice components, Composition API, routing, state and API integration.',
+    'Express':'Build middleware-based APIs, validation, authentication and error handling.',
+    'GraphQL':'Learn schemas, queries, mutations, resolvers and API authorization.',
+    'PostgreSQL':'Practice relational modeling, joins, indexes, transactions and performance tuning.',
+    'MongoDB':'Practice document modeling, aggregation, indexing and CRUD operations.',
+    'Java':'Strengthen OOP, collections, exceptions, streams and backend development.',
+    'C++':'Practice OOP, STL, memory management and algorithmic problem solving.',
+    'C#':'Practice .NET, OOP, LINQ, APIs and application architecture.',
+    'Go':'Build concurrent services, REST APIs and command-line tools in Go.',
+    'Software Development':'Work through requirements, design, implementation, testing, review and deployment.',
+    'Data Structures':'Practice arrays, linked lists, stacks, queues, trees, graphs and hash tables.',
+    'Algorithms':'Practice searching, sorting, recursion, graphs, dynamic programming and complexity analysis.',
+    'System Design':'Study scalability, caching, queues, databases, load balancing and service boundaries.',
+    'CI/CD':'Create an automated pipeline for linting, testing, building and deployment.',
+    'Linux':'Practice shell commands, processes, permissions, networking and service management.',
+    'Bash':'Write scripts using variables, loops, functions, pipes, conditions and exit codes.',
+    'Terraform':'Define cloud infrastructure as code and practice modules, state and reusable configurations.',
+    'Ansible':'Practice inventories, playbooks, roles, variables and repeatable server configuration.',
+    'Jenkins':'Create pipelines that automatically build, test and deploy applications.',
+    'GitHub Actions':'Build workflow files for CI, tests, releases and deployment automation.',
+    'Machine Learning':'Practice data preparation, model training, validation, evaluation and deployment.',
+    'Data Analysis':'Practice cleaning, exploration, visualization and communicating data-driven findings.',
+    'Communication':'Practice concise technical explanations, documentation and presentation skills.',
+    'Leadership':'Take ownership of small projects, coordinate tasks and mentor or support teammates.',
+    'Problem Solving':'Practice breaking requirements into smaller tasks and evaluating alternative solutions.'
+  };
+  return guides[skill] || `Develop practical ${skill} knowledge through a small project, documentation review and hands-on exercises${roleTitle ? ` relevant to ${roleTitle}` : ''}.`;
+}
+
+function getMissingSkillPriority(skill, index){
+  if(index < 2) return 'High';
+  if(index < 4) return 'Medium';
+  return 'Recommended';
+}
+
+function renderMissingSkills(user){
+  const missing = user.matchDetails?.missingSkills || [];
+  if(!missing.length){
+    return `<div class="biobox" style="margin-top:18px"><h4>Skills to improve</h4><p>Great match — no required skills are currently missing for the selected job.</p></div>`;
+  }
+  const roleTitle = user.matchDetails?.roleTitle || 'selected job';
+  const items = missing.map((skill, index) => `
+    <div style="padding:12px 0;border-bottom:1px solid #e1dfd6">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:center">
+        <strong>${escapeHtml(skill)}</strong>
+        <span class="chip">${getMissingSkillPriority(skill,index)} priority</span>
+      </div>
+      <div class="mini" style="margin-top:5px">Why improve: ${escapeHtml(skill)} is required for ${escapeHtml(roleTitle)} but was not detected in the resume.</div>
+      <div style="font-size:13px;margin-top:5px">How to improve: ${escapeHtml(getSkillImprovementDetails(skill, roleTitle))}</div>
+    </div>
+  `).join('');
+  return `<div class="biobox" style="margin-top:18px"><h4>Missing skills & improvement plan</h4><p class="mini" style="margin-bottom:6px">These are the selected-job skills not detected in the resume.</p>${items}</div>`;
+}
+
+function computeMatchDetails(skills, jobDesc, roleId=''){
+  const text = (jobDesc || '').toLowerCase();
+  const role = JOB_ROLES.find(r => r.id === roleId) || JOB_ROLES.find(r =>
+    text.includes(r.title.toLowerCase())
+  );
+
+  const requiredSkills = role ? role.requiredSkills : SKILL_BANK.filter(s =>
+    text.includes(s.toLowerCase())
+  ).slice(0,12);
+
+  const normalizeSkill = skill => skill.toLowerCase().replace(/[\s._-]+/g,'');
+  const resumeSkillNames = new Set(skills.map(s => normalizeSkill(s.skill)));
+
+  const matchedSkills = requiredSkills.filter(s => resumeSkillNames.has(normalizeSkill(s)));
+  const missingSkills = requiredSkills.filter(s => !resumeSkillNames.has(normalizeSkill(s)));
+  const skillMatch = requiredSkills.length
+    ? Math.round((matchedSkills.length / requiredSkills.length) * 100)
+    : Math.min(100, Math.round(skills.slice(0,5).reduce((sum,s) => sum + s.score, 0) / Math.max(1, Math.min(5,skills.length))));
+
+  const years = getExperienceYears(currentResumeTextForMatch);
+  const minYears = role ? role.minYears : 2;
+  const maxYears = role ? role.maxYears : 5;
+  const experienceMatch = scoreExperience(years, minYears, maxYears);
+
+  const keywordHits = role
+    ? role.keywords.filter(k => text.includes(k)).length
+    : 0;
+  const jobRelevance = role
+    ? Math.min(100, Math.round((keywordHits / Math.max(1, role.keywords.length)) * 100) + 30)
+    : 60;
+
+  const overall = Math.round(
+    skillMatch * 0.65 +
+    experienceMatch * 0.20 +
+    jobRelevance * 0.15
+  );
+
+  return {
+    overall: Math.min(100, Math.max(0, overall)),
+    skillMatch,
+    experienceMatch,
+    jobRelevance,
+    matchedSkills,
+    missingSkills,
+    requiredSkills,
+    years,
+    minYears,
+    maxYears,
+    roleTitle: role ? role.title : 'Custom software role'
+  };
+}
+
+let currentResumeTextForMatch = '';
+
+function computeMatch(skills, jobDesc, roleId=''){
+  if(!jobDesc){
+    return 0;
+  }
+  return computeMatchDetails(skills, jobDesc, roleId).overall;
+}
+
+
+/* ================= DASHBOARD ================= */
+
+function setDashTab(tab){
+  dashTab=tab;
+
+  dashTab = tab;
+  const notifyBtn = document.querySelector('#page-dashboard .notify-btn');
+  if(notifyBtn) notifyBtn.style.display = tab === 'personal' ? 'none' : '';
+
+
+  const buttons =
+  document.querySelectorAll(
+    '#page-dashboard .navbtn'
+  );
+
+
+  buttons.forEach(
+
+    (button,index) => {
+
+      const tabs = [
+
+        'bio',
+        'skills',
+        'personal'
+
+      ];
+
+
+      button.classList.toggle(
+
+        'active',
+
+        tabs[index] === tab
+
+      );
+
+    }
+
+  );
+
+
+  if(!session || session.type !== 'user'){
+    showPage('page-user-auth');
+    return;
+  }
+
+  const user = db.users.find(x =>
+    String(x.email || '').toLowerCase() === String(session.email || '').toLowerCase()
+  );
+
+  if(!user){
+    showPage('page-user-auth');
+    return;
+  }
+
+  renderDashboard(user);
+
+}
+
+
+function renderDashboard(user){
+
+  if(!user) return;
+  const notifyBtn=document.querySelector('#page-dashboard .notify-btn');
+  if(notifyBtn) notifyBtn.style.display=dashTab==='personal'?'none':'';
+
+  ensureUserCommunication(user);
+  document.getElementById('dash-match').textContent='MATCH '+user.jobMatch+'%';
+  updateNotificationDot(user);
+
+  const box =
+  document.getElementById(
+    'dash-content'
+  );
+
+
+  charts.forEach(chart => {
+    try { if(chart && typeof chart.destroy === 'function') chart.destroy(); } catch(e) {}
+  });
+
+  charts = [];
+
+
+  if(
+    dashTab === 'bio'
+  ){
+
+    const profile = user.profile || {};
+    const roleTitle = user.matchDetails?.roleTitle || 'Selected software job';
+    const fitScore = Number(user.jobMatch ?? user.matchDetails?.overall ?? 0);
+    const fitLabel = fitScore >= 80 ? 'Excellent fit' : fitScore >= 65 ? 'Good fit' : fitScore >= 50 ? 'Partial fit' : 'Low fit';
+
+    box.innerHTML = `
+
+    <h2>Bio</h2>
+
+    <div class="biogrid">
+
+      <div class="biobox">
+        <h4>Candidate</h4>
+        <p>${escapeHtml(profile.name || 'Name not detected from resume')}</p>
+      </div>
+
+      <div class="biobox">
+        <h4>Selected job</h4>
+        <p>${escapeHtml(roleTitle)}</p>
+      </div>
+
+      <div class="biobox">
+        <h4>Fit for this job</h4>
+        <p><strong>${fitScore}% — ${fitLabel}</strong></p>
+        <div class="scorebar"><span style="width:${fitScore}%"></span></div>
+      </div>
+
+      <div class="biobox">
+        <h4>Top skills detected</h4>
+        <p>${(user.skills || []).slice(0,6).map(s => escapeHtml(s.skill)).join(', ') || 'None detected'}</p>
+      </div>
+
+    </div>
+
+    ${profile.summary ? `
+    <div class="match-note">
+      <b>Resume summary:</b><br>${escapeHtml(profile.summary)}
+    </div>` : ''}
+
+    <div class="match-grid">
+
+      <div class="match-card">
+        <h4>Overall job fit</h4>
+        <strong>${fitScore}%</strong>
+        <div class="scorebar"><span style="width:${fitScore}%"></span></div>
+        <div class="mini">${escapeHtml(roleTitle)}</div>
+      </div>
+
+      <div class="match-card">
+        <h4>Skills match</h4>
+        <strong>${user.matchDetails?.skillMatch ?? 0}%</strong>
+        <div class="scorebar"><span style="width:${user.matchDetails?.skillMatch ?? 0}%"></span></div>
+        <div class="mini">${user.matchDetails?.matchedSkills?.length ?? 0} of ${user.matchDetails?.requiredSkills?.length ?? 0} target skills</div>
+      </div>
+
+      <div class="match-card">
+        <h4>Experience match</h4>
+        <strong>${user.matchDetails?.experienceMatch ?? 0}%</strong>
+        <div class="scorebar"><span style="width:${user.matchDetails?.experienceMatch ?? 0}%"></span></div>
+        <div class="mini">${user.matchDetails?.years ?? 0} years detected</div>
+      </div>
+
+      <div class="match-card">
+        <h4>Job relevance</h4>
+        <strong>${user.matchDetails?.jobRelevance ?? 0}%</strong>
+        <div class="scorebar"><span style="width:${user.matchDetails?.jobRelevance ?? 0}%"></span></div>
+        <div class="mini">Role and keyword alignment</div>
+      </div>
+
+    </div>
+
+    ${user.overallReview ? `
+    <div class="activity-note">
+      <b>Overall review saved:</b> ${escapeHtml(formatTime(user.overallReview.savedAt))} · This saved review will remain available when you log in again.
+    </div>` : ''}
+
+    <div class="match-note">
+      <b>Why this score:</b>
+      ${escapeHtml(user.matchDetails?.matchedSkills?.length ? 'Matched skills: ' + user.matchDetails.matchedSkills.join(', ') + '.' : 'No required skills were directly detected.')}
+      <br>
+      <b>Target experience:</b> ${user.matchDetails?.minYears ?? 0}–${user.matchDetails?.maxYears ?? 0} years; <b>detected:</b> ${user.matchDetails?.years ?? 0} years.
+    </div>
+
+`;
+
+  }
+
+  else if(
+    dashTab === 'skills'
+  ){
+
+    box.innerHTML = `
+
+    <h2>
+    Skills Analysis
+    </h2>
+
+    <div class="match-note" style="margin-bottom:18px">
+      <b>Detected skills:</b> ${escapeHtml((user.skills || []).map(s => s.skill).join(', ') || 'None detected')}
+      <br>
+      <b>Required for selected job:</b> ${escapeHtml((user.matchDetails?.requiredSkills || []).join(', ') || 'Not available')}
+      <br>
+      <b>Missing:</b> ${escapeHtml((user.matchDetails?.missingSkills || []).join(', ') || 'None')}
+    </div>
+
+    ${renderMissingSkills(user)}
+
+    <div
+    class="chartgrid"
+    id="chartgrid">
+
+    </div>
+
+    `;
+
+
+    buildCharts(user);
+
+  }
+
+
+  else{
+
+    const profile = user.profile || {};
+    const profileRows = [];
+    if(profile.linkedin) profileRows.push(`<p><b>LinkedIn:</b> ${profileLink(profile.linkedin)}</p>`);
+    if(profile.github) profileRows.push(`<p><b>GitHub:</b> ${profileLink(profile.github)}</p>`);
+    if(profile.portfolio) profileRows.push(`<p><b>Portfolio / Website:</b> ${profileLink(profile.portfolio)}</p>`);
+    if((profile.otherProfiles || []).length){
+      profileRows.push(`<p><b>Other profiles:</b><br>${profile.otherProfiles.map(profileLink).join('<br>')}</p>`);
+    }
+
+    box.innerHTML = `
+
+    <h2>Personal details</h2>
+
+    <div class="biogrid">
+      <div class="biobox"><h4>Name</h4><p>${escapeHtml(profile.name || 'Not detected')}</p></div>
+      <div class="biobox"><h4>Email</h4><p>${escapeHtml(profile.email || user.email || 'Not detected')}</p></div>
+      <div class="biobox"><h4>Phone</h4><p>${escapeHtml(profile.phone || user.phone || 'Not detected')}</p></div>
+      <div class="biobox"><h4>Location</h4><p>${escapeHtml(profile.location || 'Not detected')}</p></div>
+      <div class="biobox"><h4>Selected job</h4><p>${escapeHtml(user.matchDetails?.roleTitle || 'Not selected')}</p></div>
+      <div class="biobox"><h4>Job fit score</h4><p><strong>${Number(user.jobMatch ?? 0)}%</strong></p></div>
+    </div>
+
+    <div class="biobox personal-profiles" style="margin-top:18px">
+      <h4>Professional profiles found in resume</h4>
+      ${profileRows.length ? profileRows.join('') : '<p>No LinkedIn, GitHub, portfolio or other profile URL was detected in the uploaded resume.</p>'}
+    </div>
+
+    <div class="biobox" style="margin-top:18px">
+      <h4>Skills detected from resume</h4>
+      <p>${(user.skills || []).map(s => escapeHtml(s.skill)).join(', ') || 'None detected'}</p>
+    </div>
+
+    <div class="biobox" style="margin-top:18px">
+      <h4>Job description used for matching</h4>
+      <p>${escapeHtml(user.jobDesc || 'None provided')}</p>
+    </div>
+
+    <section class="resume-chat-card" aria-label="Chat with admin about your job">
+      <div class="resume-chat-head">
+        <div>
+          <span class="resume-chat-kicker">CAREER SUPPORT</span>
+          <h3>Chat with Admin about your Job</h3>
+          <p>Choose a question below. Scanline will answer from your resume and current job-match results.</p>
+        </div>
+      </div>
+
+      <div class="quick-question-grid">
+        <button onclick="answerResumeQuestion('fit')"><span>✓</span> Do I fit this job?</button>
+        <button onclick="answerResumeQuestion('improve')"><span>↗</span> What improvements are needed?</button>
+        <button onclick="answerResumeQuestion('skills')"><span>◆</span> What skills are required?</button>
+        <button onclick="answerResumeQuestion('missing')"><span>!</span> Which skills am I missing?</button>
+        <button onclick="answerResumeQuestion('experience')"><span>◷</span> Is my experience sufficient?</button>
+        <button onclick="answerResumeQuestion('strengths')"><span>★</span> What are my strongest areas?</button>
+      </div>
+
+      <div class="resume-chat-answer" id="resume-chat-answer">
+        <b>Ask a question above</b>
+        <span>Your answer will be based on the resume, detected skills, experience and selected job.</span>
+      </div>
+
+      <div class="resume-chat-compose">
+        <input id="resume-chat-question" type="text" placeholder="Ask something about your resume or job match..." autocomplete="off" onkeydown="if(event.key==='Enter') answerResumeQuestion('custom')">
+        <button onclick="answerResumeQuestion('custom')">Ask</button>
+      </div>
+    </section>
+
+    `;
+
+  }
+
+  updateNotificationDot(user);
+}
+
+
+function currentCandidate(){
+  if(!session || session.type!=='user') return null;
+  return db.users.find(u=>String(u.email||'').toLowerCase()===String(session.email||'').toLowerCase())||null;
+}
+
+function answerResumeQuestion(kind){
+  const user=currentCandidate();
+  if(!user)return;
+  ensureUserCommunication(user);
+  const md=user.matchDetails||{};
+  const skills=(user.skills||[]).slice().sort((a,b)=>(Number(b.score)||0)-(Number(a.score)||0));
+  const detected=skills.map(s=>s.skill).filter(Boolean);
+  const required=md.requiredSkills||[];
+  const missing=md.missingSkills||[];
+  const role=md.roleTitle||'the selected job';
+  const fit=Number(user.jobMatch??md.overall??0);
+  const years=Number(md.years??0), min=Number(md.minYears??0), max=Number(md.maxYears??0);
+  const best=skills.slice(0,5).map(s=>`${s.skill} (${Number(s.score)||0}%)`).join(', ')||'No skills were detected yet.';
+  const target=required.join(', ')||'No specific required skills were configured for this role.';
+  let title='',answer='',askedQuestion='';
+
+  if(kind==='custom'){
+    const input=(document.getElementById('resume-chat-question')?.value||'').trim();
+    if(!input)return;
+    askedQuestion=input;
+    const q=input.toLowerCase();
+    if(q.includes('fit')||q.includes('suitable')) kind='fit';
+    else if(q.includes('improve')||q.includes('better')) kind='improve';
+    else if(q.includes('missing')&&q.includes('skill')) kind='missing';
+    else if(q.includes('skill')) kind='skills';
+    else if(q.includes('experience')||q.includes('year')) kind='experience';
+    else if(q.includes('strong')||q.includes('strength')) kind='strengths';
+    else kind='general';
+  }
+
+  if(kind==='fit'){
+    title='Do I fit this job?';
+    if(!askedQuestion)askedQuestion=title;
+    answer=`Your current match score is ${fit}% for ${role}. ${fit>=80?'Your profile is a strong match based on the detected resume evidence.':fit>=60?'You have a reasonable match, but strengthening the missing areas could improve your readiness.':'Your current match is limited, so focus first on the missing skills and role-specific evidence.'} Your strongest detected areas are ${best}.`;
+  }else if(kind==='improve'){
+    title='What improvements are needed?';
+    if(!askedQuestion)askedQuestion=title;
+    answer=`For ${role}, the main improvement areas are ${missing.length?missing.join(', '):'adding stronger evidence of your existing skills through projects, achievements and measurable results'}. You can also improve the resume by connecting each important skill to a project or work example.`;
+  }else if(kind==='skills'){
+    title='What skills are required?';
+    if(!askedQuestion)askedQuestion=title;
+    answer=`The current job matching setup requires or prioritizes: ${target}. Your resume currently shows: ${detected.join(', ')||'no detected skills'}.`;
+  }else if(kind==='missing'){
+    title='Which skills am I missing?';
+    if(!askedQuestion)askedQuestion=title;
+    answer=missing.length?`The analysis identified these missing or insufficiently evidenced skills for ${role}: ${missing.join(', ')}. Adding a project, certification or work example for these areas can strengthen your match.`:`No major required skill gap was identified from the current job description. Focus on making your existing skills more explicit in project and experience descriptions.`;
+  }else if(kind==='experience'){
+    title='Is my experience sufficient?';
+    if(!askedQuestion)askedQuestion=title;
+    answer=`The resume indicates about ${years} year${years===1?'':'s'} of experience. The selected role targets ${min}–${max} years. Your experience match is ${Number(md.experienceMatch??0)}%, so the profile ${years>=min?'meets the minimum experience target.':'is below the minimum experience target; stronger project evidence can help demonstrate readiness.'}`;
+  }else if(kind==='strengths'){
+    title='What are my strongest areas?';
+    if(!askedQuestion)askedQuestion=title;
+    answer=`Based on the resume evidence, your strongest detected areas are ${best}. These should be prominent in the summary, project descriptions and experience bullets when they are relevant to ${role}.`;
+  }else{
+    title='Resume question';
+    if(!askedQuestion)askedQuestion='General resume/job question';
+    answer=`I can help with your ${role} application. Your current match is ${fit}%, with ${detected.length} detected skills. Based on your resume, focus on ${missing.length?`the missing areas: ${missing.join(', ')}`:'making your strongest skills and achievements more explicit'}. For a more specific answer, ask about job fit, improvements, required skills, missing skills, experience or strengths.`;
+  }
+
+  const now=new Date().toISOString();
+  user.resumeQuestions.unshift({id:'rq_'+Date.now()+'_'+Math.random().toString(36).slice(2),question:askedQuestion,answer,topic:kind,createdAt:now,jobRole:role,jobMatch:fit});
+  user.resumeQuestions=user.resumeQuestions.slice(0,100);
+  saveDB();
+
+  const out=document.getElementById('resume-chat-answer');
+  if(out)out.innerHTML=`<b>${escapeHtml(title)}</b><span>${escapeHtml(answer)}</span><small>Recorded in your Overall View • ${formatTime(now)}</small>`;
+}
+
+function escapeHtml(text){
+
+  return (
+    text || ''
+  )
+  .replace(
+    /[&<>]/g,
+    character => {
+
+      return {
+
+        '&':'&amp;',
+        '<':'&lt;',
+        '>':'&gt;'
+
+      }[character];
+
+    }
+  );
+
+}
+
+
+/* ================= CHARTS ================= */
+
+function buildCharts(user){
+  const grid=document.getElementById('chartgrid');
+  if(!grid)return;
+
+  charts.forEach(c=>{try{c.destroy();}catch(e){}});
+  charts=[];
+  grid.innerHTML='';
+
+  const skills=(user.skills||[]).slice().sort((a,b)=>(Number(b.score)||0)-(Number(a.score)||0));
+  const top6=skills.slice(0,6);
+  const ranked=skills.slice(0,10);
+  const labels=ranked.map(s=>s.skill);
+  const scores=ranked.map(s=>Number(s.score)||0);
+  const md=user.matchDetails||{};
+  const jobMatch=Number(user.jobMatch??md.overall??0);
+  const skillMatch=Number(md.skillMatch??0);
+  const experienceMatch=Number(md.experienceMatch??0);
+  const jobRelevance=Number(md.jobRelevance??0);
+  const years=Number(md.years??0);
+  const minYears=Number(md.minYears??0);
+  const maxYears=Number(md.maxYears??5);
+  const resume=(user.resumeText||'').toLowerCase();
+  const role=(JOB_ROLES||[]).find(r=>r.id===user.jobRole)||null;
+
+  const categoryMap={
+    'JavaScript':'Programming','TypeScript':'Programming','Python':'Programming','Java':'Programming','C':'Programming','C++':'Programming','C#':'Programming','Go':'Programming','Rust':'Programming','PHP':'Programming','Ruby':'Programming','Kotlin':'Programming','Swift':'Programming',
+    'HTML/CSS':'Web','React':'Web','Angular':'Web','Vue.js':'Web','Next.js':'Web','Node.js':'Web','Express':'Web','Redux':'Web','Bootstrap':'Web','Tailwind CSS':'Web','jQuery':'Web','Frontend':'Web','Backend':'Web','Full Stack':'Web','UI/UX':'Web','Responsive Design':'Web',
+    'SQL':'Data & DB','MySQL':'Data & DB','PostgreSQL':'Data & DB','MongoDB':'Data & DB','Oracle':'Data & DB','Redis':'Data & DB','GraphQL':'API','REST API':'API','API':'API','Flask':'Backend','Django':'Backend','FastAPI':'Backend','Spring Boot':'Backend','Microservices':'Backend',
+    'AWS':'Cloud/DevOps','Azure':'Cloud/DevOps','Google Cloud':'Cloud/DevOps','Docker':'Cloud/DevOps','Kubernetes':'Cloud/DevOps','Jenkins':'Cloud/DevOps','GitHub Actions':'Cloud/DevOps','GitLab CI/CD':'Cloud/DevOps','CI/CD':'Cloud/DevOps','Terraform':'Cloud/DevOps','Ansible':'Cloud/DevOps','Linux':'Cloud/DevOps','Bash':'Cloud/DevOps','Shell Scripting':'Cloud/DevOps','Cloud Computing':'Cloud/DevOps','Infrastructure as Code':'Cloud/DevOps','Automation':'Cloud/DevOps',
+    'Machine Learning':'Data/AI','Deep Learning':'Data/AI','Artificial Intelligence':'Data/AI','Data Science':'Data/AI','Data Analysis':'Data/AI','Pandas':'Data/AI','NumPy':'Data/AI','TensorFlow':'Data/AI','PyTorch':'Data/AI','Power BI':'Data/AI','Tableau':'Data/AI','Excel':'Data/AI','Statistics':'Data/AI',
+    'Git':'Engineering','GitHub':'Engineering','GitLab':'Engineering','Testing':'Testing','Unit Testing':'Testing','Integration Testing':'Testing','Selenium':'Testing','Cypress':'Testing','Jest':'Testing','Postman':'Testing','Software Development':'Engineering','Object-Oriented Programming':'Engineering','Data Structures':'Engineering','Algorithms':'Engineering','System Design':'Engineering','Agile':'Professional','Scrum':'Professional','Figma':'Professional','Communication':'Soft','Leadership':'Soft','Teamwork':'Soft','Problem Solving':'Soft','Critical Thinking':'Soft','Time Management':'Soft','Project Management':'Soft','Documentation':'Soft'
+  };
+
+  function add(title,type,data,options={}){
+    const wrap=document.createElement('div');
+    wrap.className='chartbox';
+    wrap.innerHTML='<h4>'+escapeHtml(title)+'</h4><div class="chart-meta"></div><canvas></canvas>';
+    grid.appendChild(wrap);
+    if(options.meta)wrap.querySelector('.chart-meta').textContent=options.meta;
+    const chart=new Chart(wrap.querySelector('canvas').getContext('2d'),{type,data,options});
+    charts.push(chart);
+  }
+
+  // 1. Skill proficiency
+  add('Skill Proficiency','bar',{
+    labels:labels,
+    datasets:[{label:'Proficiency',data:scores}]
+  },{max:100,meta:'Detected skills scored from resume evidence.'});
+
+  // 2. Proficiency ranked — horizontal labels remain fully readable.
+  add('Proficiency Ranked','horizontalBar',{
+    labels:ranked.map(s=>s.skill),
+    datasets:[{label:'Ranked score',data:scores}]
+  },{max:100,meta:'Highest-confidence skills appear first.'});
+
+  // 3. Keyword density by section
+  const sectionNames=[];const sectionValues=[];
+  const sectionRegex=/^\s*(summary|profile|skills?|technical skills?|experience|work experience|employment|projects?|education|certifications?|achievements?)\s*:?\s*$/gim;
+  const matches=[...((user.resumeText||'').matchAll(sectionRegex))];
+  if(matches.length){
+    matches.forEach((m,i)=>{
+      const start=m.index+m[0].length,end=i+1<matches.length?matches[i+1].index:(user.resumeText||'').length;
+      const chunk=(user.resumeText||'').slice(start,end).toLowerCase();
+      const keywords=md.requiredSkills?.length?md.requiredSkills:(role?.keywords||SKILL_BANK.slice(0,12));
+      const hits=keywords.reduce((sum,k)=>{
+        const re=new RegExp(k.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g');
+        return sum+(chunk.match(re)||[]).length;
+      },0);
+      sectionNames.push(String(m[1]).replace(/\b\w/g,c=>c.toUpperCase()));
+      sectionValues.push(hits);
+    });
+  }
+  if(!sectionNames.length){
+    const chunks=(user.resumeText||'').split(/\n\s*\n/).filter(Boolean).slice(0,6);
+    const keywords=md.requiredSkills?.length?md.requiredSkills:(role?.keywords||SKILL_BANK.slice(0,12));
+    chunks.forEach((chunk,i)=>{
+      const lc=chunk.toLowerCase();
+      const hits=keywords.reduce((sum,k)=>{
+        const re=new RegExp(k.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g');
+        return sum+(lc.match(re)||[]).length;
+      },0);
+      sectionNames.push('Section '+(i+1));
+      sectionValues.push(hits);
+    });
+  }
+  add('Keyword Density by Section','bar',{labels:sectionNames,datasets:[{label:'Keyword hits',data:sectionValues}]},{max:Math.max(5,...sectionValues),meta:'Counts target-role keyword occurrences per resume section.'});
+
+  // 4. Cumulative match growth
+  const growth=[];let running=0;
+  ranked.forEach((s,i)=>{running+=Number(s.score)||0;growth.push(Math.round(running/(i+1)));});
+  add('Cumulative Match Growth','line',{labels:ranked.map(s=>s.skill),datasets:[{label:'Cumulative average',data:growth}]},{max:100,meta:'Cumulative average proficiency as more skills are included.'});
+
+  // 5. Skill category split
+  const cats={};skills.forEach(s=>{const c=categoryMap[s.skill]||'Other';cats[c]=(cats[c]||0)+1;});
+  const catLabels=Object.keys(cats),catValues=catLabels.map(c=>cats[c]);
+  add('Skill Category Split','polarArea',{labels:catLabels,datasets:[{label:'Skills',data:catValues}]},{max:Math.max(1,...catValues),meta:'Distribution of detected skills across technical categories.'});
+
+  // 6. Job match score
+  add('Job Match Score','doughnut',{labels:['Match','Gap'],datasets:[{label:'Job fit',data:[jobMatch,Math.max(0,100-jobMatch)]}]},{max:100,centerText:jobMatch+'%',meta:'Overall = skills 65% + experience 20% + relevance 15%.'});
+
+  // 7. Top 6 skills — radar
+  add('Top 6 Skills — Radar','radar',{labels:top6.map(s=>s.skill),datasets:[{label:'Top skill score',data:top6.map(s=>Number(s.score)||0)}]},{max:100,meta:'Top six detected skills with readable labels.'});
+
+  // 8. Top 6 skills — polar area
+  add('Top 6 Skills — Polar Area','polarArea',{labels:top6.map(s=>s.skill),datasets:[{label:'Top six',data:top6.map(s=>Number(s.score)||0)}]},{max:100,meta:'Relative strength of the six leading skills.'});
+
+  // 9. Technical vs soft — stacked
+  const technical=skills.filter(s=>(categoryMap[s.skill]||'Other')!=='Soft').reduce((a,s)=>a+(Number(s.score)||0),0);
+  const soft=skills.filter(s=>(categoryMap[s.skill]||'Other')==='Soft').reduce((a,s)=>a+(Number(s.score)||0),0);
+  const totalSkillStrength=Math.max(1,technical+soft);
+  const technicalPct=Math.round(technical/totalSkillStrength*100);
+  const softPct=100-technicalPct;
+  add('Technical vs Soft — Stacked','stacked',{labels:['Detected profile'],datasets:[
+    {label:'Technical',data:[technicalPct]},
+    {label:'Soft',data:[softPct]}
+  ]},{max:100,meta:'Average strength split between technical and soft skills.'});
+
+  // 10. Relevance vs frequency
+  const freqData=ranked.map(s=>{
+    const re=new RegExp(String(s.skill).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g');
+    const frequency=(resume.match(re)||[]).length;
+    return {x:Math.max(1,frequency),y:Number(s.score)||0,label:s.skill};
+  });
+  add('Relevance vs Frequency','scatter',{datasets:[{label:'Skill',data:freqData}]},{max:100,meta:'X = resume frequency; Y = proficiency/relevance score.'});
+
+  // 11. Score vs role threshold
+  const req=(md.requiredSkills||[]).map(name=>({name,score:(skills.find(s=>s.skill.toLowerCase()===String(name).toLowerCase())||{}).score||0}));
+  const thresholdData=req.length?req:ranked.slice(0,6).map(s=>({name:s.skill,score:s.score}));
+  const threshold=Math.round(100/Math.max(1,thresholdData.length));
+  add('Score vs Role Threshold','horizontalBar',{labels:thresholdData.map(x=>x.name),datasets:[{label:'Candidate score',data:thresholdData.map(x=>Number(x.score)||0)}]},{max:100,meta:'Role-required skills are compared against a 60% readiness threshold.'});
+
+  // 12. Score vs estimated experience
+  const expLabels=ranked.slice(0,8).map(s=>s.skill);
+  const expScores=ranked.slice(0,8).map(s=>Math.min(100,Math.round((Number(s.score)||0)*(0.7+Math.min(3,years)*0.1))));
+  add('Score vs Est. Experience','line',{labels:expLabels,datasets:[{label:'Experience-adjusted score',data:expScores}]},{max:100,meta:'Estimated experience: '+years+' years; target '+minYears+'–'+maxYears+' years.'});
+
+  // Make charts resize only when their grid actually changes.
+  if(window.ResizeObserver){
+    const observer=new ResizeObserver(()=>{charts.forEach(c=>{try{c.draw();}catch(e){}})});
+    observer.observe(grid);
+    grid._chartObserver=observer;
+  }
+}
+
+
+/* ================= ADMIN TABLE ================= */
+
+function renderAdminTable(){
+  if(session?.type==='admin')session.lastViewedKey=null;
+  updateAdminNotificationDot();
+
+  document
+  .getElementById(
+    'admin-view-back'
+  )
+  .style.display =
+  'none';
+
+
+  const box =
+  document.getElementById(
+    'admin-content'
+  );
+
+
+  if(
+    db.users.length === 0
+  ){
+
+    box.innerHTML = `
+
+    <h2>
+    Registered candidates
+    </h2>
+
+    <div class="empty">
+
+    No candidates have signed up yet.
+
+    </div>
+
+    `;
+
+    return;
+
+  }
+
+
+  const rows =
+  db.users
+  .map(
+    user => `
+
+    <tr>
+
+    <td>
+    ${escapeHtml(user.email || '')}
+    </td>
+
+    <td>
+    ${user.phone}
+    </td>
+
+    <td>
+
+    ${
+      user.skills
+      ?
+      user.skills.length +
+      ' skills · ' +
+      Number(user.overallReview?.overall ?? user.jobMatch ?? 0) +
+      '% match · Overall review saved'
+      :
+      'Not uploaded yet'
+    }
+
+    </td>
+
+    <td>
+
+    <button
+    class="viewbtn"
+    onclick="adminViewUser(decodeURIComponent('${encodeURIComponent(user.email || '')}'))">
+
+    View record
+
+    </button>
+
+    </td>
+
+    </tr>
+
+    `
+  )
+  .join('');
+
+
+  box.innerHTML = `
+
+  <h2>
+  Registered candidates
+  </h2>
+  <div class="mini" style="margin:6px 0 18px">Candidate records, saved overall reviews, candidate questions and admin profile-view activity are stored locally in this browser. Administrator accounts are enabled.</div>
+
+
+  <table>
+
+  <thead>
+
+  <tr>
+
+  <th>Email</th>
+
+  <th>Phone</th>
+
+  <th>Resume status</th>
+
+  <th></th>
+
+  </tr>
+
+  </thead>
+
+
+  <tbody>
+
+  ${rows}
+
+  </tbody>
+
+  </table>
+
+  <details style="margin-top:18px">
+    <summary style="cursor:pointer;font-weight:800">Recent admin activity</summary>
+    <div style="margin-top:10px">
+      ${(db.adminActivity||[]).slice(0,10).map(a=>`<div class="activity-note"><b>${escapeHtml(a.userName||a.userEmail)}</b> · ${escapeHtml(a.action||'Profile viewed')}<br><span>${escapeHtml(formatTime(a.accessedAt))} · Admin: ${escapeHtml(a.adminId||a.adminEmail||'')}</span></div>`).join('') || '<div class="empty">No profile-view activity yet.</div>'}
+    </div>
+  </details>
+
+  `;
+
+}
+
+
+function adminViewUser(email){
+
+  const user =
+  db.users.find(
+
+    u =>
+    String(u.email||'').toLowerCase() === String(email||'').toLowerCase()
+
+  );
+
+
+  const back = document.getElementById('admin-view-back');
+  if(back) back.style.display = 'block';
+
+  const box =
+  document.getElementById(
+    'admin-content'
+  );
+
+
+  if(!user){
+    box.innerHTML = '<div class="empty">Candidate record not found.</div>';
+    return;
+  }
+
+  ensureUserCommunication(user);
+  autoReviewNotification(user,session?.email||'admin');
+
+  if(user.matchDetails && !user.overallReview){
+    user.overallReview={
+      savedAt:new Date().toISOString(), candidateName:user.profile?.name||'', candidateEmail:user.email,
+      roleId:user.matchDetails.roleId||user.jobRole||'', roleTitle:user.matchDetails.roleTitle||'',
+      overall:Number(user.jobMatch||user.matchDetails.overall||0), skillMatch:Number(user.matchDetails.skillMatch||0),
+      experienceMatch:Number(user.matchDetails.experienceMatch||0), jobRelevance:Number(user.matchDetails.jobRelevance||0),
+      years:Number(user.matchDetails.years||0), minYears:Number(user.matchDetails.minYears||0), maxYears:Number(user.matchDetails.maxYears||0),
+      matchedSkills:[...(user.matchDetails.matchedSkills||[])], missingSkills:[...(user.matchDetails.missingSkills||[])],
+      detectedSkills:[...(user.skills||[])].map(s=>({skill:s.skill,score:Number(s.score||0)})),
+      resumeSummary:user.profile?.summary||'', resumeText:user.resumeText, jobDesc:user.jobDesc
+    };
+    saveDB();
+  }
+
+  if(!user.skills){
+
+    box.dataset.candidateEmail = String(user.email||'').toLowerCase();
+
+    box.innerHTML = `
+
+    <h2>
+    ${user.email}
+    </h2>
+
+    <div class="empty">
+
+    This candidate has not uploaded a resume.
+
+    </div>
+
+    `;
+
+    return;
+
+  }
+
+  box.dataset.candidateEmail = String(user.email||'').toLowerCase();
+
+  box.innerHTML = `
+
+  <h2>
+  ${user.email}
+  </h2>
+
+
+  <div class="biogrid">
+
+  <div class="biobox">
+  <h4>Candidate</h4>
+  <p>${escapeHtml(user.profile?.name || 'Not detected')}</p>
+  </div>
+
+  <div class="biobox">
+  <h4>Selected job</h4>
+  <p>${escapeHtml(user.matchDetails?.roleTitle || 'Not selected')}</p>
+  </div>
+
+  <div class="biobox">
+  <h4>Phone</h4>
+
+  <p>
+  ${user.phone}
+  </p>
+
+  </div>
+
+
+  <div class="biobox">
+
+  <h4>Job match</h4>
+
+  <p>
+  ${user.jobMatch}%
+  </p>
+
+  </div>
+
+  <div class="biobox">
+
+  <h4>Match details</h4>
+
+  <p>
+  Skills: ${user.matchDetails?.skillMatch ?? 0}%<br>
+  Experience: ${user.matchDetails?.experienceMatch ?? 0}%<br>
+  Relevance: ${user.matchDetails?.jobRelevance ?? 0}%
+  </p>
+
+  </div>
+
+
+  <div class="biobox">
+
+  <h4>Skills</h4>
+
+  <p>
+
+  ${user.skills
+  .map(
+    s => s.skill
+  )
+  .join(', ')}
+
+  </p>
+
+  </div>
+
+  <div class="biobox">
+  <h4>Missing skills</h4>
+  <p>${escapeHtml((user.matchDetails?.missingSkills || []).join(', ') || 'None')}</p>
+  </div>
+
+  <div class="biobox">
+  <h4>Resume profile</h4>
+  <p>${escapeHtml(user.profile?.summary || 'No summary detected.')}</p>
+  </div>
+
+  </div>
+
+  <div class="match-note" style="margin-top:18px">
+    <b>Overall review:</b> ${Number(user.overallReview?.overall ?? user.jobMatch ?? 0)}% job fit for ${escapeHtml(user.overallReview?.roleTitle || user.matchDetails?.roleTitle || 'selected role')}.
+    <br><b>Matched:</b> ${escapeHtml((user.matchDetails?.matchedSkills || []).join(', ') || 'None')}
+    <br><b>Missing:</b> ${escapeHtml((user.matchDetails?.missingSkills || []).join(', ') || 'None')}
+    <br><b>Experience:</b> ${user.matchDetails?.years ?? 0} years detected; target ${user.matchDetails?.minYears ?? 0}–${user.matchDetails?.maxYears ?? 0} years.
+  </div>
+
+  <div class="activity-note">
+    <b>Saved overall review:</b> ${escapeHtml(formatTime(user.overallReview?.savedAt || user.updatedAt || '')) || 'Available from current analysis'} · This review is retained with the candidate record and is shown again when the candidate logs back in.
+  </div>
+
+  <section class="biobox" style="margin-top:18px">
+    <h4>Candidate questions &amp; resume guidance history</h4>
+    <p class="professional-note">Questions asked from the Personal Details career-support area are recorded here as part of the candidate's overall view.</p>
+    <div style="margin-top:10px">
+      ${(user.resumeQuestions||[]).slice(0,20).map(q=>`<div class="activity-note"><b>Q:</b> ${escapeHtml(q.question)}<br><b>A:</b> ${escapeHtml(q.answer)}<br><span>${escapeHtml(formatTime(q.createdAt))} · Topic: ${escapeHtml(q.topic||'general')} · Match: ${Number(q.jobMatch||0)}%</span></div>`).join('') || '<div class="empty">No career-support questions have been asked yet.</div>'}
+    </div>
+  </section>
+
+  <div class="activity-note">✓ Profile-view event recorded with candidate ID, candidate name, admin ID, date/time, resume/profile viewed and action performed. Duplicate notifications are blocked while the same record remains open.</div>
+
+  <div class="admin-actions">
+    <button class="admin-action primary" onclick="notifyCandidateViaGmail(decodeURIComponent('${encodeURIComponent(user.email||'')}'))">✉ Notify via Gmail</button>
+    <button class="admin-action" onclick="openChat(decodeURIComponent('${encodeURIComponent(user.email || '')}'),'admin')">Open chat with candidate</button>
+  </div>
+  <div class="email-state" style="margin-top:8px">${(()=>{const n=(user.notifications||[]).find(x=>x.type==='Admin Review');if(!n)return 'No review notification sent yet.';const emailText=n.emailStatus==='sent'?(n.emailProvider==='gmail-manual'?'Gmail email sent to '+escapeHtml(user.email)+' (manual).':n.emailProvider==='gmail'?'Gmail email sent automatically to '+escapeHtml(user.email)+'.':'Notification email sent.'):n.emailStatus==='failed'?'Automatic email failed'+(n.emailError?': '+escapeHtml(n.emailError):'')+' — use "Notify via Gmail" to send it yourself.':n.emailStatus==='not-configured'?'Email not configured — in-app notification is available.':'In-app notification sent.';const smsText=n.smsStatus==='sent'?' SMS sent to '+escapeHtml(user.phone||'the candidate phone')+'.':n.smsStatus==='failed'?' SMS delivery failed'+(n.smsError?': '+escapeHtml(n.smsError):''):n.smsStatus==='not-configured'?(user.phone?' SMS webhook not configured.':' No phone number is saved.'):' SMS pending.';return emailText+smsText;})()}</div>
+
+  `;
+
+}
+
+</script>
+
+</body>
+</html>
